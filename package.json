@@ -1,0 +1,22 @@
+{
+  "name": "whatsapp-bot-baileys",
+  "version": "1.0.0",
+  "description": "Aplicação Node.js para envio automatizado de mensagens para grupos do WhatsApp.",
+  "main": "app.js",
+  "type": "module",
+  "author": "Andre MR",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andre-mr/whatsapp-bot-baileys.git"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "6.7.8",
+    "dotenv": "16.4.5",
+    "openai": "4.73.1",
+    "qrcode-terminal": "0.12.0"
+  },
+  "scripts": {
+    "start": "node app.js"
+  }
+}
