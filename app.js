@@ -217,12 +217,7 @@ async function runWhatsAppBot() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
-      const key = {
-        remoteJid: msg.key.remoteJid,
-        id: msg.key.id,
-        participant: msg?.participant || undefined,
-      };
-      sock.readMessages([key]);
+      sock.readMessages([msg.key]);
 
       if (!msg.message || msg.key.fromMe) continue;
 
