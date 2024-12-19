@@ -48,7 +48,9 @@ const openai = new OpenAI({
 const dataStore = {
   events: [],
   tasks: [],
+  ownnumber: "",
   authorized: [], // Substitua pelos números autorizados
+  mentions: true, // Responder apenas a menções
   timezone: -3,
   waversion: [2, 3000, 1015901307],
 };
@@ -200,6 +202,16 @@ async function runWhatsAppBot() {
   });
 
   sock.ev.on("creds.update", async () => {
+    const userNumber = sock.user?.id?.match(/^\d+/)?.[0];
+
+    if (userNumber) {
+      if (!dataStore.ownnumber) {
+        consoleLogColor(`Número do bot registrado: ${userNumber}`, ConsoleColors.GREEN);
+        dataStore.ownnumber = userNumber;
+        saveData();
+      }
+    }
+
     saveCreds();
   });
 
@@ -215,8 +227,16 @@ async function runWhatsAppBot() {
       const isAuthorized = dataStore.authorized.includes(actualSender);
 
       if (!isAuthorized) continue;
+      let messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
 
-      const messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
+      if (dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
+        continue;
+      }
+
+      if (messageContent.includes(`@${dataStore.ownnumber}`)) {
+        messageContent = messageContent.replace(`@${dataStore.ownnumber}`, "").trim();
+      }
+
       consoleLogColor(`Mensagem recebida: ${messageContent}`, ConsoleColors.BRIGHT);
 
       const key = {
@@ -228,7 +248,6 @@ async function runWhatsAppBot() {
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
-      // const timezoneOffsetMinutes = new Date().getTimezoneOffset(); // Exemplo: -180 para GMT-3
       const timezoneOffsetMinutes = dataStore.timezone * 60; // Exemplo: -180 para GMT-3
       const timezoneString = `UTC${timezoneOffsetMinutes <= 0 ? "+" : "-"}${Math.abs(timezoneOffsetMinutes) / 60}`;
 
@@ -308,7 +327,7 @@ async function runWhatsAppBot() {
         saveData();
 
         await sock.sendMessage(sender, {
-          text: `✅ Evento *"${response.description}"*\nagendado para *${new Date(
+          text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(
             new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
           ).toLocaleString("pt-BR")}*.\nNotificação ${
             response.notify && response.notify > 0
