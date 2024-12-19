@@ -217,6 +217,13 @@ async function runWhatsAppBot() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
+      const key = {
+        remoteJid: msg.key.remoteJid,
+        id: msg.key.id,
+        participant: msg?.participant || undefined,
+      };
+      sock.readMessages([key]);
+
       if (!msg.message || msg.key.fromMe) continue;
 
       const isFromGroup = msg.key.remoteJid.endsWith("@g.us");
@@ -229,7 +236,7 @@ async function runWhatsAppBot() {
       if (!isAuthorized) continue;
       let messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
 
-      if (dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
+      if (isFromGroup && dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
         continue;
       }
 
@@ -238,13 +245,6 @@ async function runWhatsAppBot() {
       }
 
       consoleLogColor(`Mensagem recebida: ${messageContent}`, ConsoleColors.BRIGHT);
-
-      const key = {
-        remoteJid: msg.key.remoteJid,
-        id: msg.key.id,
-        participant: msg?.participant || undefined,
-      };
-      sock.readMessages([key]);
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
