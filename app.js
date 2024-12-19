@@ -146,7 +146,7 @@ function scheduleEvents() {
     // Filtrar eventos que devem ser notificados
     const dueEvents = dataStore.events.filter((event) => {
       const eventTime = new Date(event.datetime);
-      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 30 * 1000);
+      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
       const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
       return now >= notifyTime && now <= delayLimit; // Agora está dentro da janela de notificação
     });
