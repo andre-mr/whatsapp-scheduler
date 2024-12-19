@@ -279,8 +279,8 @@ async function runWhatsAppBot() {
           await sock.sendMessage(sender, {
             text:
               "🤖 *Comandos disponíveis:*\n\n" +
-              `!atender (${dataStore.listen ? "ativado" : "desativado"}) - Ativa/desativa novas solicitações.\n` +
-              `!notificar (${dataStore.notify ? "ativado" : "desativado"}) - Ativa/desativa notificações.`,
+              `*!atender* (${dataStore.listen ? "ativado" : "desativado"}) - Ativa/desativa novas solicitações.\n` +
+              `*!notificar* (${dataStore.notify ? "ativado" : "desativado"}) - Ativa/desativa notificações.`,
           });
           continue;
         case "!atender":
@@ -352,6 +352,7 @@ async function runWhatsAppBot() {
         });
 
         const content = openaiResponse.choices[0].message.content.trim();
+        consoleLogColor(`Resposta da OpenAI: ${content}`, ConsoleColors.RESET);
 
         // Verificar se a resposta é JSON
         const jsonMatch = content.match(/{[\s\S]*}/);
@@ -456,7 +457,7 @@ async function runWhatsAppBot() {
         const tasks = dataStore.tasks
           .filter((task) => task.sender === sender)
           .map((task, i) => `*${i + 1}.* ${task.description}`)
-          .join("\n\n");
+          .join("\n");
         const events = dataStore.events
           .filter((event) => event.sender === sender)
           .map(
@@ -471,7 +472,7 @@ async function runWhatsAppBot() {
                   : "na hora do evento"
               })_`
           )
-          .join("\n\n");
+          .join("\n");
 
         await sock.sendMessage(sender, {
           text:
