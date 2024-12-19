@@ -302,7 +302,13 @@ async function runWhatsAppBot() {
         await sock.sendMessage(sender, {
           text: `✅ Evento "${response.description}" agendado para ${new Date(
             new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString()}. Notificação ${response.notify} minutos antes.`,
+          ).toLocaleString()}. Notificação ${
+            response.notify && response.notify > 0
+              ? response.notify + response.notify == 1
+                ? " minuto antes"
+                : " minutos antes"
+              : "na hora do evento"
+          }`,
         });
       } else if (response.type === "task") {
         dataStore.tasks.push({ description: response.description });
