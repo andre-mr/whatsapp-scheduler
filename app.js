@@ -482,7 +482,7 @@ const startApp = async () => {
   ({ state, saveCreds } = await useMultiFileAuthState("auth"));
   currentVersion = await getWhatsAppVersion();
 
-  // runWhatsAppBot();
+  runWhatsAppBot();
 };
 
 startApp();
