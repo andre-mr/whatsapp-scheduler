@@ -50,6 +50,8 @@ const dataStore = {
   tasks: [],
   ownnumber: "",
   authorized: [], // Substitua pelos números autorizados
+  notify: true, // Notificações ativas
+  listen: true, // Atende solicitações
   mentions: true, // Responder apenas a menções
   timezone: -3,
   waversion: [2, 3000, 1015901307],
@@ -64,8 +66,26 @@ function saveData() {
 
 function loadData() {
   if (fs.existsSync(dataFilePath)) {
-    const rawData = fs.readFileSync(dataFilePath, "utf8");
-    Object.assign(dataStore, JSON.parse(rawData));
+    try {
+      const rawData = fs.readFileSync(dataFilePath, "utf8");
+      const loadedData = JSON.parse(rawData);
+
+      // Garantir que a estrutura padrão prevaleça
+      Object.keys(dataStore).forEach((key) => {
+        if (!(key in loadedData)) {
+          loadedData[key] = dataStore[key]; // Preenche valores ausentes com os padrões
+        }
+      });
+
+      // Substituir o dataStore em memória com os valores corrigidos
+      Object.assign(dataStore, loadedData);
+
+      // Persistir as correções no arquivo
+      saveData();
+    } catch (error) {
+      consoleLogColor("Erro ao carregar data.json. Recriando com valores padrão.", ConsoleColors.RED);
+      fs.writeFileSync(dataFilePath, JSON.stringify(dataStore, null, 2));
+    }
   } else {
     // Criar arquivo com valores padrão caso não exista
     fs.writeFileSync(dataFilePath, JSON.stringify(dataStore, null, 2));
@@ -76,7 +96,6 @@ function loadData() {
 loadData();
 
 let state, saveCreds, currentVersion, sock;
-let reconnectionAttempts = 1;
 
 // Função para obter a versão do WhatsApp
 async function getWhatsAppVersion() {
@@ -145,12 +164,25 @@ function scheduleEvents() {
   setInterval(async () => {
     const now = new Date();
 
+    // Expurgo de eventos passados, independentemente de notificações ativas
+    dataStore.events = dataStore.events.filter((event) => {
+      const eventTime = new Date(event.datetime);
+      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
+      const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
+
+      return now <= delayLimit; // Manter eventos dentro da janela de tolerância
+    });
+
+    if (!dataStore.notify) {
+      saveData(); // Garantir que o expurgo seja persistido mesmo sem notificações
+      return; // Sem notificações, sair da função
+    }
+
     // Filtrar eventos que devem ser notificados
     const dueEvents = dataStore.events.filter((event) => {
       const eventTime = new Date(event.datetime);
       const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
-      const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
-      return now >= notifyTime && now <= delayLimit; // Agora está dentro da janela de notificação
+      return now >= notifyTime; // Dentro do horário de notificação
     });
 
     for (const event of dueEvents) {
@@ -169,9 +201,7 @@ function scheduleEvents() {
       }
     }
 
-    // Remover eventos passados
-    dataStore.events = dataStore.events.filter((event) => new Date(event.datetime) > now);
-    saveData();
+    saveData(); // Persistir alterações no dataStore
   }, 60 * 1000); // Executar a cada 1 minuto
 }
 
@@ -227,11 +257,39 @@ async function runWhatsAppBot() {
 
       // Checar se o remetente (quem enviou) está autorizado
       const isAuthorized = dataStore.authorized.includes(actualSender);
-
       if (!isAuthorized) continue;
+
       let messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
 
+      // somente aceitar mensagens de grupo em menções se essa opção estiver ativada
       if (isFromGroup && dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
+        continue;
+      }
+
+      switch (messageContent.trim().toLowerCase()) {
+        case "!comandos":
+          await sock.sendMessage(sender, {
+            text:
+              "🤖 *Comandos disponíveis:*\n\n" +
+              "!atender - Ativa/desativa novas solicitações.\n" +
+              "!notificar - Ativa/desativa notificações.",
+          });
+          continue;
+        case "!atender":
+          dataStore.listen = !dataStore.listen;
+          await sock.sendMessage(sender, {
+            text: `🤖 *Modo atender ${dataStore.listen ? "ativado" : "desativado"}!*`,
+          });
+          continue;
+        case "!notificar":
+          dataStore.notify = !dataStore.notify;
+          await sock.sendMessage(sender, {
+            text: `🔔 *Notificações ${dataStore.notify ? "ativado" : "desativado"}!*`,
+          });
+          continue;
+      }
+
+      if (!dataStore.listen) {
         continue;
       }
 
@@ -239,7 +297,7 @@ async function runWhatsAppBot() {
         messageContent = messageContent.replace(`@${dataStore.ownnumber}`, "").trim();
       }
 
-      consoleLogColor(`Mensagem recebida: ${messageContent}`, ConsoleColors.BRIGHT);
+      consoleLogColor(`Mensagem recebida de ${sender}: ${messageContent}`, ConsoleColors.BRIGHT);
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
@@ -253,38 +311,32 @@ async function runWhatsAppBot() {
           messages: [
             {
               role: "system",
-              content: `Você é um assistente para agendamento e organização. 
-                Sua função é interpretar solicitações para adicionar, alterar ou remover eventos e tarefas, listar itens, ou limpar listas.
-                Quando fornecer um agendamento, considere que o usuário está no fuso horário ${timezoneString}.
-                Retorne o seguinte:
-                  - Para eventos: JSON com "type": "event", "description", "datetime" (ISO 8601 UTC), e "notify" (minutos antes para notificação, se não especificado na solicitação, o padrão é 0).
-                    - Solicitações que contenham palavras como "me lembre", "lembrete", ou frases indicando um horário específico (ex.: "em X minutos", "às Y horas") devem ser interpretadas como eventos.
-                    - Se a mensagem mencionar um tempo relativo (ex.: "em 10 minutos"), calcule o horário adicionando o tempo especificado à data/hora atual e defina notify como 0.
-                  - Para alterações: JSON com "type": "update", "target": "tasks | events", "itemIndex", e os campos a serem atualizados.
-                  - Para tarefas: JSON com "type": "task" e "description".
-                  - Para consultas: JSON com "type": "query" e "queryType" ("tasks | events | both").
-                  - Para remoções: JSON com "type": "remove", "target" ("tasks | events"), e "itemIndex".
-                  - Para limpar listas: JSON com "type": "clear" e "target" ("tasks | events | all").
-                Se não entender a solicitação, responda com: "Desculpe, não entendi sua solicitação. Pode reformular?".`,
+              content: `Você é um assistente especializado em organizar eventos e tarefas. Interprete e responda solicitações de forma estruturada em JSON para gerenciar a agenda. 
+              Utilize as seguintes categorias:
+                - **Eventos:** JSON com "type": "event", "description", "datetime" (ISO 8601 UTC) e "notify" (em minutos; padrão 0). Inclui pedidos como "me lembre", "lembrete", ou semelhantes, com tempos definidos (relativos ou absolutos).
+                - **Alterações:** JSON com "type": "update", "target": ("tasks" ou "events"), "itemIndex", e os campos a atualizar.
+                - **Tarefas:** JSON com "type": "task" e "description". Inclui pedidos sem tempo relativo ou absoluto definido.
+                - **Consultas:** JSON com "type": "query", "queryType": ("tasks", "events" ou "both").
+                - **Remoções:** JSON com "type": "remove", "target" ("tasks" ou "events"), e "itemIndex".
+                - **Limpeza:** JSON com "type": "clear", "target" ("tasks", "events" ou "all").
+              Caso não entenda a solicitação, diga: "Desculpe, não entendi sua solicitação. Pode reformular?".`,
             },
             {
               role: "user",
-              content: `
-                Transforme a seguinte mensagem em um JSON estruturado com base nas listas fornecidas:
-                Fuso horário: ${timezoneString}
-                Data/hora atual: ${currentDateTimeISO}
-                Lista atual de tarefas: ${JSON.stringify(
-                  dataStore.tasks.filter((task) => task.sender === sender),
-                  null,
-                  2
-                )}
-                Lista atual de eventos: ${JSON.stringify(
-                  dataStore.events.filter((event) => event.sender === sender),
-                  null,
-                  2
-                )}
-                Mensagem: "${messageContent}"
-              `,
+              content: `Transforme a mensagem abaixo em JSON baseado nas informações fornecidas:
+              - **Fuso horário:** ${timezoneString}
+              - **Data/hora atual:** ${currentDateTimeISO}
+              - **Tarefas existentes:** ${JSON.stringify(
+                dataStore.tasks.filter((task) => task.sender === sender),
+                null,
+                2
+              )}
+              - **Eventos existentes:** ${JSON.stringify(
+                dataStore.events.filter((event) => event.sender === sender),
+                null,
+                2
+              )}
+              - **Mensagem:** "${messageContent}"`,
             },
           ],
         });
@@ -430,7 +482,7 @@ const startApp = async () => {
   ({ state, saveCreds } = await useMultiFileAuthState("auth"));
   currentVersion = await getWhatsAppVersion();
 
-  runWhatsAppBot();
+  // runWhatsAppBot();
 };
 
 startApp();
