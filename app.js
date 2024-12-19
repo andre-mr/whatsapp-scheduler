@@ -49,6 +49,7 @@ const dataStore = {
   events: [],
   tasks: [],
   authorized: [], // Substitua pelos números autorizados
+  timezone: -3,
   waversion: [2, 3000, 1015901307],
 };
 
@@ -145,7 +146,7 @@ function scheduleEvents() {
     // Filtrar eventos que devem ser notificados
     const dueEvents = dataStore.events.filter((event) => {
       const eventTime = new Date(event.datetime);
-      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
+      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 30 * 1000);
       const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
       return now >= notifyTime && now <= delayLimit; // Agora está dentro da janela de notificação
     });
@@ -154,7 +155,9 @@ function scheduleEvents() {
       // Enviar mensagem ao solicitante
       try {
         await sock.sendMessage(event.sender, {
-          text: `⏰ "${event.description}"\nEm: ${new Date(event.datetime).toLocaleString()}.`,
+          text: `⏰ "${event.description}"\nEm: ${new Date(
+            new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
+          ).toLocaleString()}.`,
         });
         consoleLogColor(`Lembrete enviado para ${event.sender}: "${event.description}"`, ConsoleColors.GREEN);
       } catch (error) {
@@ -214,6 +217,13 @@ async function runWhatsAppBot() {
 
       const messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
       consoleLogColor(`Mensagem recebida: ${messageContent}`, ConsoleColors.BRIGHT);
+
+      const key = {
+        remoteJid: msg.key.remoteJid,
+        id: msg.key.id,
+        participant: msg?.participant || undefined,
+      };
+      sock.readMessages([key]);
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
@@ -351,9 +361,15 @@ async function runWhatsAppBot() {
         const events = dataStore.events
           .map(
             (event, i) =>
-              `${i + 1}. ${event.description}\n   ${new Date(event.datetime).toLocaleString()}\n   (notificar ${
-                event.notify || 0
-              } minutos antes)`
+              `${i + 1}. ${event.description}\n   ${new Date(
+                new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
+              ).toLocaleString()}\n   (notificar ${
+                event.notify && event.notify > 0
+                  ? event.notify + event.notify == 1
+                    ? " minuto antes"
+                    : " minutos antes"
+                  : "na hora do evento"
+              })`
           )
           .join("\n\n");
 
