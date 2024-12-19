@@ -241,7 +241,9 @@ async function runWhatsAppBot() {
                 Sua função é interpretar solicitações para adicionar, alterar ou remover eventos e tarefas, listar itens, ou limpar listas.
                 Quando fornecer um agendamento, considere que o usuário está no fuso horário ${timezoneString}.
                 Retorne o seguinte:
-                  - Para eventos: JSON com "type": "event", "description", "datetime" (ISO 8601 UTC), e "notify" (minutos antes para notificação, padrão 60).
+                  - Para eventos: JSON com "type": "event", "description", "datetime" (ISO 8601 UTC), e "notify" (minutos antes para notificação, padrão 30).
+                    - **Solicitações que contenham palavras como "me lembre", "lembrete", ou frases indicando um horário específico (ex.: "em X minutos", "às Y horas") devem ser interpretadas como eventos**.
+                    - Se a mensagem mencionar um tempo relativo (ex.: "em 10 minutos"), calcule o horário adicionando o tempo especificado à data/hora atual e defina notify como 0.
                   - Para alterações: JSON com "type": "update", "target": "tasks | events", "itemIndex", e os campos a serem atualizados.
                   - Para tarefas: JSON com "type": "task" e "description".
                   - Para consultas: JSON com "type": "query" e "queryType" ("tasks | events | both").
@@ -287,7 +289,7 @@ async function runWhatsAppBot() {
 
       // Processar a resposta
       if (response.type === "event") {
-        const notify = response.notify || 60;
+        const notify = response.notify || 30;
         dataStore.events.push({
           description: response.description,
           datetime: response.datetime, // ISO 8601 UTC
@@ -299,7 +301,7 @@ async function runWhatsAppBot() {
 
         await sock.sendMessage(sender, {
           text: `✅ Evento "${response.description}" agendado para ${new Date(
-            response.datetime
+            new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
           ).toLocaleString()}. Notificação ${response.notify} minutos antes.`,
         });
       } else if (response.type === "task") {
