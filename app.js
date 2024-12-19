@@ -189,7 +189,7 @@ function scheduleEvents() {
       // Enviar mensagem ao solicitante
       try {
         await sock.sendMessage(event.sender, {
-          text: `⏰ "${event.description}"\nEm: ${new Date(
+          text: `⏰ *${event.description}*\nEm: ${new Date(
             new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
           ).toLocaleString("pt-BR")}.`,
         });
@@ -267,24 +267,34 @@ async function runWhatsAppBot() {
       }
 
       switch (messageContent.trim().toLowerCase()) {
+        case "!status":
+          await sock.sendMessage(sender, {
+            text:
+              "🟢 *Agente online*\n\n" +
+              `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
+              `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
+          });
+          continue;
         case "!comandos":
           await sock.sendMessage(sender, {
             text:
               "🤖 *Comandos disponíveis:*\n\n" +
-              "!atender - Ativa/desativa novas solicitações.\n" +
-              "!notificar - Ativa/desativa notificações.",
+              `!atender (${dataStore.listen ? "ativado" : "desativado"}) - Ativa/desativa novas solicitações.\n` +
+              `!notificar (${dataStore.notify ? "ativado" : "desativado"}) - Ativa/desativa notificações.`,
           });
           continue;
         case "!atender":
           dataStore.listen = !dataStore.listen;
           await sock.sendMessage(sender, {
-            text: `🤖 *Modo atender ${dataStore.listen ? "ativado" : "desativado"}!*`,
+            text: `${
+              dataStore.listen ? "✅ Ativado, aguardando solicitações." : "❌ Desativado, ignorando solicitações."
+            }`,
           });
           continue;
         case "!notificar":
           dataStore.notify = !dataStore.notify;
           await sock.sendMessage(sender, {
-            text: `🔔 *Notificações ${dataStore.notify ? "ativado" : "desativado"}!*`,
+            text: `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
           });
           continue;
       }
