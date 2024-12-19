@@ -160,6 +160,8 @@ function scheduleEvents() {
           ).toLocaleString()}.`,
         });
         consoleLogColor(`Lembrete enviado para ${event.sender}: "${event.description}"`, ConsoleColors.GREEN);
+        // Remover evento após enviar notificação com sucesso
+        dataStore.events = dataStore.events.filter((e) => e !== event);
       } catch (error) {
         consoleLogColor(`Erro ao enviar lembrete para ${event.sender}: ${error}`, ConsoleColors.RED);
       }
