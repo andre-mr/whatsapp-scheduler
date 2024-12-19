@@ -188,7 +188,6 @@ async function runWhatsAppBot() {
     const { connection, lastDisconnect } = update;
 
     if (connection === "close") {
-      console.log("reason:", lastDisconnect.error?.output?.statusCode);
       const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
       consoleLogColor("Conexão encerrada. Reiniciando...", ConsoleColors.YELLOW);
       if (shouldReconnect) {
@@ -309,14 +308,14 @@ async function runWhatsAppBot() {
         saveData();
 
         await sock.sendMessage(sender, {
-          text: `✅ Evento "${response.description}" agendado para ${new Date(
+          text: `✅ Evento *"${response.description}"*\nagendado para *${new Date(
             new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString("pt-BR")}. Notificação ${
+          ).toLocaleString("pt-BR")}*.\nNotificação ${
             response.notify && response.notify > 0
               ? response.notify + response.notify == 1
-                ? " minuto antes"
-                : " minutos antes"
-              : "na hora do evento"
+                ? " minuto antes."
+                : " minutos antes."
+              : "na hora do evento."
           }`,
         });
       } else if (response.type === "task") {
@@ -380,21 +379,21 @@ async function runWhatsAppBot() {
       } else if (response.type === "query") {
         const tasks = dataStore.tasks
           .filter((task) => task.sender === sender)
-          .map((task, i) => `${i + 1}. ${task.description}`)
-          .join("\n");
+          .map((task, i) => `*${i + 1}.* ${task.description}`)
+          .join("\n\n");
         const events = dataStore.events
           .filter((event) => event.sender === sender)
           .map(
             (event, i) =>
-              `${i + 1}. ${event.description}\n   ${new Date(
+              `*${i + 1}.* ${event.description}\n   ${new Date(
                 new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-              ).toLocaleString("pt-BR")}\n   (notificar ${
+              ).toLocaleString("pt-BR")}\n   _(notificar ${
                 event.notify && event.notify > 0
                   ? event.notify + event.notify == 1
                     ? " minuto antes"
                     : " minutos antes"
                   : "na hora do evento"
-              })`
+              })_`
           )
           .join("\n\n");
 
