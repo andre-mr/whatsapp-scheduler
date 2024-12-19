@@ -325,7 +325,7 @@ async function runWhatsAppBot() {
           text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(
             new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
           ).toLocaleString("pt-BR")}*.\nNotificação ${
-            response.notify && response.notify > 0
+            response.notify !== undefined && response.notify > 0
               ? response.notify + response.notify == 1
                 ? " minuto antes."
                 : " minutos antes."
@@ -402,7 +402,7 @@ async function runWhatsAppBot() {
               `*${i + 1}.* ${event.description}\n   ${new Date(
                 new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
               ).toLocaleString("pt-BR")}\n   _(notificar ${
-                event.notify && event.notify > 0
+                response.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
                     ? " minuto antes"
                     : " minutos antes"
