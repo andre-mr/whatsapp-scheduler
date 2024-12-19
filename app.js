@@ -257,8 +257,8 @@ async function runWhatsAppBot() {
                 Sua função é interpretar solicitações para adicionar, alterar ou remover eventos e tarefas, listar itens, ou limpar listas.
                 Quando fornecer um agendamento, considere que o usuário está no fuso horário ${timezoneString}.
                 Retorne o seguinte:
-                  - Para eventos: JSON com "type": "event", "description", "datetime" (ISO 8601 UTC), e "notify" (minutos antes para notificação, padrão 30).
-                    - **Solicitações que contenham palavras como "me lembre", "lembrete", ou frases indicando um horário específico (ex.: "em X minutos", "às Y horas") devem ser interpretadas como eventos**.
+                  - Para eventos: JSON com "type": "event", "description", "datetime" (ISO 8601 UTC), e "notify" (minutos antes para notificação, se não especificado na solicitação, o padrão é 0).
+                    - Solicitações que contenham palavras como "me lembre", "lembrete", ou frases indicando um horário específico (ex.: "em X minutos", "às Y horas") devem ser interpretadas como eventos.
                     - Se a mensagem mencionar um tempo relativo (ex.: "em 10 minutos"), calcule o horário adicionando o tempo especificado à data/hora atual e defina notify como 0.
                   - Para alterações: JSON com "type": "update", "target": "tasks | events", "itemIndex", e os campos a serem atualizados.
                   - Para tarefas: JSON com "type": "task" e "description".
@@ -311,7 +311,7 @@ async function runWhatsAppBot() {
 
       // Processar a resposta
       if (response.type === "event") {
-        const notify = response.notify !== undefined ? response.notify : 30; // Corrigido
+        const notify = response.notify !== undefined ? response.notify : 0; // Corrigido
         dataStore.events.push({
           description: response.description,
           datetime: response.datetime, // ISO 8601 UTC
