@@ -157,7 +157,7 @@ function scheduleEvents() {
         await sock.sendMessage(event.sender, {
           text: `⏰ "${event.description}"\nEm: ${new Date(
             new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString()}.`,
+          ).toLocaleString("pt-BR")}.`,
         });
         consoleLogColor(`Lembrete enviado para ${event.sender}: "${event.description}"`, ConsoleColors.GREEN);
         // Remover evento após enviar notificação com sucesso
@@ -229,7 +229,8 @@ async function runWhatsAppBot() {
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
-      const timezoneOffsetMinutes = new Date().getTimezoneOffset(); // Exemplo: -180 para GMT-3
+      // const timezoneOffsetMinutes = new Date().getTimezoneOffset(); // Exemplo: -180 para GMT-3
+      const timezoneOffsetMinutes = dataStore.timezone * 60; // Exemplo: -180 para GMT-3
       const timezoneString = `UTC${timezoneOffsetMinutes <= 0 ? "+" : "-"}${Math.abs(timezoneOffsetMinutes) / 60}`;
 
       let response;
@@ -259,15 +260,21 @@ async function runWhatsAppBot() {
                 Transforme a seguinte mensagem em um JSON estruturado com base nas listas fornecidas:
                 Fuso horário: ${timezoneString}
                 Data/hora atual: ${currentDateTimeISO}
-                Lista atual de tarefas: ${JSON.stringify(dataStore.tasks, null, 2)}
-                Lista atual de eventos: ${JSON.stringify(dataStore.events, null, 2)}
+                Lista atual de tarefas: ${JSON.stringify(
+                  dataStore.tasks.filter((task) => task.sender === sender),
+                  null,
+                  2
+                )}
+                Lista atual de eventos: ${JSON.stringify(
+                  dataStore.events.filter((event) => event.sender === sender),
+                  null,
+                  2
+                )}
                 Mensagem: "${messageContent}"
               `,
             },
           ],
         });
-
-        console.log("Resposta da OpenAI:", openaiResponse.choices[0].message.content);
 
         const content = openaiResponse.choices[0].message.content.trim();
 
@@ -291,7 +298,7 @@ async function runWhatsAppBot() {
 
       // Processar a resposta
       if (response.type === "event") {
-        const notify = response.notify || 30;
+        const notify = response.notify !== undefined ? response.notify : 30; // Corrigido
         dataStore.events.push({
           description: response.description,
           datetime: response.datetime, // ISO 8601 UTC
@@ -304,7 +311,7 @@ async function runWhatsAppBot() {
         await sock.sendMessage(sender, {
           text: `✅ Evento "${response.description}" agendado para ${new Date(
             new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString()}. Notificação ${
+          ).toLocaleString("pt-BR")}. Notificação ${
             response.notify && response.notify > 0
               ? response.notify + response.notify == 1
                 ? " minuto antes"
@@ -313,14 +320,15 @@ async function runWhatsAppBot() {
           }`,
         });
       } else if (response.type === "task") {
-        dataStore.tasks.push({ description: response.description });
+        dataStore.tasks.push({ description: response.description, sender: sender });
         saveData();
         await sock.sendMessage(sender, {
           text: `✅ Tarefa "${response.description}" adicionada.`,
         });
       } else if (response.type === "update") {
         const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
-        const item = targetList[response.itemIndex];
+        const filteredList = targetList.filter((item) => item.sender === sender);
+        const item = filteredList[response.itemIndex];
 
         if (item) {
           // Atualiza os campos diretamente com base na resposta
@@ -346,7 +354,8 @@ async function runWhatsAppBot() {
         }
       } else if (response.type === "remove") {
         const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
-        const removedItem = targetList.splice(response.itemIndex, 1);
+        const filteredList = targetList.filter((item) => item.sender === sender);
+        const removedItem = filteredList.splice(response.itemIndex, 1);
         saveData();
 
         await sock.sendMessage(sender, {
@@ -356,24 +365,30 @@ async function runWhatsAppBot() {
         });
       } else if (response.type === "clear") {
         if (response.target === "tasks" || response.target === "all") {
-          dataStore.tasks = [];
+          dataStore.tasks = dataStore.tasks.filter((task) => task.sender !== sender);
         }
         if (response.target === "events" || response.target === "all") {
-          dataStore.events = [];
+          dataStore.events = dataStore.events.filter((event) => event.sender !== sender);
         }
         saveData();
 
         await sock.sendMessage(sender, {
-          text: `✅ Lista de ${response.target} foi limpa com sucesso.`,
+          text: `✅ Lista ${
+            response.target === "tasks" ? "de tarefas" : response.target === "events" ? "de eventos" : "completa"
+          } foi limpa com sucesso.`,
         });
       } else if (response.type === "query") {
-        const tasks = dataStore.tasks.map((task, i) => `${i + 1}. ${task.description}`).join("\n");
+        const tasks = dataStore.tasks
+          .filter((task) => task.sender === sender)
+          .map((task, i) => `${i + 1}. ${task.description}`)
+          .join("\n");
         const events = dataStore.events
+          .filter((event) => event.sender === sender)
           .map(
             (event, i) =>
               `${i + 1}. ${event.description}\n   ${new Date(
                 new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-              ).toLocaleString()}\n   (notificar ${
+              ).toLocaleString("pt-BR")}\n   (notificar ${
                 event.notify && event.notify > 0
                   ? event.notify + event.notify == 1
                     ? " minuto antes"
@@ -384,7 +399,10 @@ async function runWhatsAppBot() {
           .join("\n\n");
 
         await sock.sendMessage(sender, {
-          text: `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}` || "Nenhum item encontrado.",
+          text:
+            (tasks && tasks.length > 0) || (events && events.length > 0)
+              ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
+              : "Nenhum item encontrado.",
         });
       } else {
         await sock.sendMessage(sender, { text: "Não entendi sua solicitação. Reformule, por favor." });
