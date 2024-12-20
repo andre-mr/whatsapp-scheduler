@@ -266,41 +266,156 @@ async function runWhatsAppBot() {
         continue;
       }
 
-      switch (messageContent.trim().toLowerCase()) {
-        case "!status":
-          await sock.sendMessage(sender, {
-            text:
-              "🟢 *Agente online*\n\n" +
-              `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
-              `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
-          });
-          continue;
-        case "!comandos":
-          await sock.sendMessage(sender, {
-            text:
-              "🤖 *Comandos disponíveis:*\n\n" +
-              `*!atender* (${dataStore.listen ? "ativado" : "desativado"}) - Ativa/desativa novas solicitações.\n` +
-              `*!notificar* (${dataStore.notify ? "ativado" : "desativado"}) - Ativa/desativa notificações.`,
-          });
-          continue;
-        case "!atender":
-          dataStore.listen = !dataStore.listen;
-          await sock.sendMessage(sender, {
-            text: `${
-              dataStore.listen ? "✅ Ativado, aguardando solicitações." : "❌ Desativado, ignorando solicitações."
-            }`,
-          });
-          continue;
-        case "!notificar":
-          dataStore.notify = !dataStore.notify;
-          await sock.sendMessage(sender, {
-            text: `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
-          });
-          continue;
+      const messageProcessed = messageContent.replace(`@${dataStore.ownnumber}`, "").trim().toLowerCase();
+
+      if (/^adicionar(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed)) {
+        const phoneNumber = messageProcessed.match(/@\d{11,15}/)?.[0].replace("@", "");
+
+        if (phoneNumber) {
+          // adicionar a lista de autorizados
+          const phoneNumberWhatsApp = phoneNumber + "@s.whatsapp.net";
+          if (dataStore.authorized.includes(phoneNumberWhatsApp)) {
+            await sock.sendMessage(sender, {
+              text: "❌ Usuário já está autorizado.",
+            });
+          } else {
+            dataStore.authorized.push(phoneNumberWhatsApp);
+            saveData();
+
+            consoleLogColor(`Usuário adicionado à lista de autorizados: ${phoneNumberWhatsApp}`, ConsoleColors.GREEN);
+            await sock.sendMessage(sender, {
+              text: "✅ Usuário adicionado.",
+            });
+          }
+        }
+
+        continue;
+      } else if (/^remover(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed)) {
+        const phoneNumber = messageProcessed.match(/@\d{11,15}/)?.[0].replace("@", "");
+
+        if (phoneNumber) {
+          // remover da lista de autorizados
+          const phoneNumberWhatsApp = phoneNumber + "@s.whatsapp.net";
+          if (dataStore.authorized.includes(phoneNumberWhatsApp)) {
+            if (dataStore.authorized.length <= 1) {
+              await sock.sendMessage(sender, {
+                text: "❌ Não é possível remover o único usuário autorizado.",
+              });
+
+              continue;
+            }
+            dataStore.authorized = dataStore.authorized.filter((num) => num !== phoneNumberWhatsApp);
+            saveData();
+
+            consoleLogColor(`Usuário removido da lista de autorizados: ${phoneNumberWhatsApp}`, ConsoleColors.GREEN);
+            await sock.sendMessage(sender, {
+              text: "✅ Usuário removido.",
+            });
+          } else {
+            await sock.sendMessage(sender, {
+              text: "❌ Usuário não encontrado.",
+            });
+          }
+        }
+
+        continue;
+      } else if (["status"].includes(messageProcessed)) {
+        await sock.sendMessage(sender, {
+          text:
+            "🟢 *Agente online*\n" +
+            `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
+            `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
+            "\n\n" +
+            "🤖 *Comandos disponíveis:*\n" +
+            `▪ *atender*: ativa/desativa todas solicitações.\n` +
+            `▪ *notificar*: ativa/desativa todas notificações.\n` +
+            `▪ *agenda*: mostra tarefas e eventos do grupo ou contato.\n` +
+            `▪ *tarefas*: mostra as tarefas do grupo ou contato.\n` +
+            `▪ *eventos*: mostra os eventos do grupo ou contato.`,
+        });
+        continue;
+      } else if (["atender"].includes(messageProcessed)) {
+        dataStore.listen = !dataStore.listen;
+        await sock.sendMessage(sender, {
+          text: `${
+            dataStore.listen ? "✅ Ativado, aguardando solicitações." : "❌ Desativado, ignorando solicitações."
+          }`,
+        });
+        continue;
+      } else if (["notificar"].includes(messageProcessed)) {
+        dataStore.notify = !dataStore.notify;
+        await sock.sendMessage(sender, {
+          text: `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
+        });
+        continue;
+      } else if (["agenda", "compromissos", "mostre", "tudo", "lista"].includes(messageProcessed)) {
+        const tasks = dataStore.tasks
+          .filter((task) => task.sender === sender)
+          .map((task, i) => `*${i + 1}.* ${task.description}`)
+          .join("\n");
+        const events = dataStore.events
+          .filter((event) => event.sender === sender)
+          .map(
+            (event, i) =>
+              `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
+                timeZone: dataStore.timezone,
+              })}\n   _(notificar ${
+                event.notify !== undefined && event.notify > 0
+                  ? event.notify + event.notify == 1
+                    ? " minuto antes"
+                    : " minutos antes"
+                  : "na hora do evento"
+              })_`
+          )
+          .join("\n");
+
+        await sock.sendMessage(sender, {
+          text:
+            (tasks && tasks.length > 0) || (events && events.length > 0)
+              ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
+              : "Nenhum item encontrado.",
+        });
+
+        continue;
+      } else if (["tarefas"].includes(messageProcessed)) {
+        const tasks = dataStore.tasks
+          .filter((task) => task.sender === sender)
+          .map((task, i) => `*${i + 1}.* ${task.description}`)
+          .join("\n");
+
+        await sock.sendMessage(sender, {
+          text: tasks && tasks.length > 0 ? `📋 Tarefas:\n${tasks}` : "Nenhum item encontrado.",
+        });
+
+        continue;
+      } else if (["eventos"].includes(messageProcessed)) {
+        const events = dataStore.events
+          .filter((event) => event.sender === sender)
+          .map(
+            (event, i) =>
+              `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
+                timeZone: dataStore.timezone,
+              })}\n   _(notificar ${
+                event.notify !== undefined && event.notify > 0
+                  ? event.notify + event.notify == 1
+                    ? " minuto antes"
+                    : " minutos antes"
+                  : "na hora do evento"
+              })_`
+          )
+          .join("\n");
+
+        await sock.sendMessage(sender, {
+          text: events && events.length > 0 ? `📅 Eventos:\n${events}` : "Nenhum item encontrado.",
+        });
+
+        continue;
       }
 
       if (!dataStore.listen) {
         continue;
+      } else if (["adicionar usuario", "adicionar usuário"].includes(messageProcessed)) {
+        //
       }
 
       if (messageContent.includes(`@${dataStore.ownnumber}`)) {
@@ -376,7 +491,7 @@ async function runWhatsAppBot() {
 
       // Processar a resposta
       if (response.type === "event") {
-        const notify = response.notify !== undefined ? response.notify : 0; // Corrigido
+        const notify = response.notify !== undefined ? response.notify : 0;
         dataStore.events.push({
           description: response.description,
           datetime: response.datetime, // ISO 8601 UTC
@@ -508,7 +623,7 @@ async function runWhatsAppBot() {
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
                 timeZone: dataStore.timezone,
               })}\n   _(notificar ${
-                response.notify !== undefined && event.notify > 0
+                event.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
                     ? " minuto antes"
                     : " minutos antes"
