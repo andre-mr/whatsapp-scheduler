@@ -53,7 +53,7 @@ const dataStore = {
   notify: true, // Notificações ativas
   listen: true, // Atende solicitações
   mentions: true, // Responder apenas a menções
-  timezone: -3,
+  timezone: "America/Sao_Paulo",
   waversion: [2, 3000, 1015901307],
 };
 
@@ -189,9 +189,9 @@ function scheduleEvents() {
       // Enviar mensagem ao solicitante
       try {
         await sock.sendMessage(event.sender, {
-          text: `⏰ *${event.description}*\nEm: ${new Date(
-            new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString("pt-BR")}.`,
+          text: `⏰ *${event.description}*\nEm: ${new Date(event.datetime).toLocaleString("pt-BR", {
+            timeZone: dataStore.timezone,
+          })}.`,
         });
         consoleLogColor(`Lembrete enviado para ${event.sender}: "${event.description}"`, ConsoleColors.GREEN);
         // Remover evento após enviar notificação com sucesso
@@ -311,8 +311,6 @@ async function runWhatsAppBot() {
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
-      const timezoneOffsetMinutes = dataStore.timezone * 60; // Exemplo: -180 para GMT-3
-      const timezoneString = `UTC${timezoneOffsetMinutes <= 0 ? "+" : "-"}${Math.abs(timezoneOffsetMinutes) / 60}`;
 
       let response;
       try {
@@ -324,11 +322,12 @@ async function runWhatsAppBot() {
               content: `Você é um assistente especializado em organizar eventos e tarefas. Interprete e responda solicitações de forma estruturada em JSON para gerenciar a agenda. 
               Utilize as seguintes categorias:
                 - **Eventos:** JSON com "type": "event", "description", "datetime" (ISO 8601 UTC) e "notify" (em minutos; padrão 0). Inclui pedidos com tempo absoluto ou relativo especificados
-                  - Para eventos: se especificado tempo relativo, como "em x minutos ou x horas" defina o tempo futuro exato a contar do atual, se tempo absoluto como"às x horas ou dia x às x horas" defina esse date-time exato.
-                  - Para eventos: "notify" é o tempo em minutos antes do evento para notificação, o padrão é sempre 0 a menos que seja explícito na solicitação.
+                  - Para eventos: se especificado tempo relativo, como "em x minutos ou x horas" defina o tempo futuro exato a contar do atual, se tempo absoluto como "às x horas ou dia x às x horas" defina esse date-time exato.
+                  - Para eventos: "notify" é o tempo em minutos antes do evento para notificação, defina sempre 0 a menos que seja explícito na solicitação ser notificado antes.
                   - Para eventos: "se especificada somente a data, defina a hora padrão como 8:00:00.
                 - **Tarefas:** JSON com "type": "task" e "description". Inclui pedidos sem tempo relativo ou absoluto definido.
-                - **Alterações:** JSON com "type": "update", "target": ("tasks" ou "events"), "itemIndex", e os campos a atualizar.
+                - **Alterações:** JSON com "type": "update", "target": ("tasks" ou "events"), "itemIndex", e "fields" com os campos a atualizar.
+                  - Para alterações: se informada nova hora ou data para um evento, considere a informação no fuso horário informado e o evento em UTC (ISO string), faça a diferença necessária, exemplo: "America/Sao_Paulo" é -3 horas do horário do campo datetime.
                 - **Consultas:** JSON com "type": "query", "queryType": ("tasks", "events" ou "both").
                 - **Remoções:** JSON com "type": "remove", "target" ("tasks" ou "events"), e "itemIndex".
                 - **Limpeza:** JSON com "type": "clear", "target" ("tasks", "events" ou "all").
@@ -337,8 +336,8 @@ async function runWhatsAppBot() {
             {
               role: "user",
               content: `Transforme a mensagem abaixo em JSON baseado nas informações fornecidas:
-              - **Fuso horário:** ${timezoneString}
-              - **Data/hora atual:** ${currentDateTimeISO}
+              - **Fuso horário:** ${dataStore.timezone}
+              - **Data/hora atual em ISOstring:** ${currentDateTimeISO}
               - **Tarefas existentes:** ${JSON.stringify(
                 dataStore.tasks.filter((task) => task.sender === sender),
                 null,
@@ -388,9 +387,10 @@ async function runWhatsAppBot() {
         saveData();
 
         await sock.sendMessage(sender, {
-          text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(
-            new Date(response.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-          ).toLocaleString("pt-BR")}*.\nNotificação ${
+          text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(response.datetime).toLocaleString(
+            "pt-BR",
+            { timezone: dataStore.timezone }
+          )}*.\nNotificação ${
             response.notify !== undefined && response.notify > 0
               ? response.notify + response.notify == 1
                 ? " minuto antes."
@@ -407,41 +407,81 @@ async function runWhatsAppBot() {
       } else if (response.type === "update") {
         const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
         const filteredList = targetList.filter((item) => item.sender === sender);
-        const item = filteredList[response.itemIndex];
 
-        if (item) {
-          // Atualiza os campos diretamente com base na resposta
-          if (response.datetime) {
-            item.datetime = response.datetime; // Atualiza datetime
-          }
-          if (response.description) {
-            item.description = response.description; // Atualiza descrição, se fornecida
-          }
-          if (response.notify !== undefined) {
-            item.notify = response.notify; // Atualiza tempo de notificação, se fornecido
-          }
-
-          saveData();
-
+        if (response.itemIndex < 0 || response.itemIndex >= filteredList.length) {
           await sock.sendMessage(sender, {
-            text: `✅ ${response.target === "tasks" ? "Tarefa" : "Evento"} atualizado com sucesso.`,
+            text: "❌ Índice inválido para atualização.",
           });
-        } else {
+          continue;
+        }
+
+        const itemToUpdate = filteredList[response.itemIndex];
+        const originalIndex = targetList.indexOf(itemToUpdate);
+
+        if (originalIndex === -1) {
           await sock.sendMessage(sender, {
             text: `❌ Não foi possível encontrar o item para atualização.`,
           });
+          continue;
         }
-      } else if (response.type === "remove") {
-        const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
-        const filteredList = targetList.filter((item) => item.sender === sender);
-        const removedItem = filteredList.splice(response.itemIndex, 1);
+
+        // Atualiza os campos diretamente no array original
+        if (response.fields?.datetime) {
+          targetList[originalIndex].datetime = response.fields.datetime;
+        }
+        if (response.fields?.description) {
+          targetList[originalIndex].description = response.fields.description;
+        }
+        if (response.fields?.notify !== undefined) {
+          targetList[originalIndex].notify = response.fields?.notify;
+        }
+
         saveData();
 
         await sock.sendMessage(sender, {
-          text: `✅ ${response.target === "tasks" ? "Tarefa" : "Evento"} "${
-            removedItem[0]?.description
-          }" foi removido.`,
+          text:
+            `✅ ${response.target === "tasks" ? "Tarefa atualizada" : "Evento atualizado"} com sucesso.\n` +
+            `*${response.itemIndex + 1}.* ${targetList[originalIndex].description}` +
+            (response.target === "events"
+              ? `\n   ${new Date(targetList[originalIndex].datetime).toLocaleString("pt-BR", {
+                  timeZone: dataStore.timezone,
+                })}\n   _(notificar ${
+                  targetList[originalIndex].notify !== undefined && targetList[originalIndex].notify > 0
+                    ? targetList[originalIndex].notify +
+                      (targetList[originalIndex].notify === 1 ? " minuto antes" : " minutos antes")
+                    : "na hora do evento"
+                })_`
+              : ""),
         });
+      } else if (response.type === "remove") {
+        const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
+        const filteredList = targetList.filter((item) => item.sender === sender);
+
+        if (response.itemIndex < 0 || response.itemIndex >= filteredList.length) {
+          sock.sendMessage(sender, {
+            text: "❌ Falha na remoção.",
+          });
+          continue;
+        }
+
+        // const removedItem = filteredList.splice(response.itemIndex, 1);
+        const itemToRemove = filteredList[response.itemIndex];
+        const originalIndex = targetList.indexOf(itemToRemove);
+
+        if (originalIndex !== -1) {
+          const removedItem = targetList.splice(originalIndex, 1);
+          saveData();
+
+          await sock.sendMessage(sender, {
+            text: `✅ ${response.target === "tasks" ? "Tarefa" : "Evento"} "${removedItem[0]?.description}" ${
+              response.target === "tasks" ? "removida" : "removido"
+            }.`,
+          });
+        } else {
+          await sock.sendMessage(sender, {
+            text: "❌ Não foi possível encontrar o item para remoção.",
+          });
+        }
       } else if (response.type === "clear") {
         if (response.target === "tasks" || response.target === "all") {
           dataStore.tasks = dataStore.tasks.filter((task) => task.sender !== sender);
@@ -465,9 +505,9 @@ async function runWhatsAppBot() {
           .filter((event) => event.sender === sender)
           .map(
             (event, i) =>
-              `*${i + 1}.* ${event.description}\n   ${new Date(
-                new Date(event.datetime).getTime() + dataStore.timezone * 60 * 60 * 1000
-              ).toLocaleString("pt-BR")}\n   _(notificar ${
+              `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
+                timezone: dataStore.timezone,
+              })}\n   _(notificar ${
                 response.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
                     ? " minuto antes"
