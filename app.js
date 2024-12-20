@@ -389,7 +389,7 @@ async function runWhatsAppBot() {
         await sock.sendMessage(sender, {
           text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(response.datetime).toLocaleString(
             "pt-BR",
-            { timezone: dataStore.timezone }
+            { timeZone: dataStore.timezone }
           )}*.\nNotificação ${
             response.notify !== undefined && response.notify > 0
               ? response.notify + response.notify == 1
@@ -506,7 +506,7 @@ async function runWhatsAppBot() {
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
-                timezone: dataStore.timezone,
+                timeZone: dataStore.timezone,
               })}\n   _(notificar ${
                 response.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
