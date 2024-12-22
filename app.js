@@ -247,9 +247,10 @@ async function runWhatsAppBot() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
+      const expirationTime = msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo?.expiration || 0;
       sock.readMessages([msg.key]);
 
-      if (!msg.message || msg.key.fromMe) continue;
+      if (!msg.message || msg.key.fromMe || msg.key?.protocolMessage?.fromMe || msg.message?.protocolMessage) continue;
 
       const isFromGroup = msg.key.remoteJid.endsWith("@g.us");
       const actualSender = isFromGroup ? msg.key.participant : msg.key.remoteJid; // Quem enviou a mensagem
@@ -259,7 +260,12 @@ async function runWhatsAppBot() {
       const isAuthorized = dataStore.authorized.includes(actualSender);
       if (!isAuthorized) continue;
 
-      let messageContent = msg.message?.conversation || msg?.message?.extendedTextMessage?.text || "";
+      let messageContent =
+        msg.message?.conversation ||
+        msg?.message?.extendedTextMessage?.text ||
+        msg?.message?.ephemeralMessage?.message?.conversation ||
+        msg?.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+        "";
 
       // somente aceitar mensagens de grupo em menções se essa opção estiver ativada
       if (isFromGroup && dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
@@ -320,19 +326,26 @@ async function runWhatsAppBot() {
 
         continue;
       } else if (["status"].includes(messageProcessed)) {
-        await sock.sendMessage(sender, {
-          text:
-            "🟢 *Agente online*\n" +
-            `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
-            `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
-            "\n\n" +
-            "🤖 *Comandos disponíveis:*\n" +
-            `▪ *atender*: ativa/desativa todas solicitações.\n` +
-            `▪ *notificar*: ativa/desativa todas notificações.\n` +
-            `▪ *agenda*: mostra tarefas e eventos do grupo ou contato.\n` +
-            `▪ *tarefas*: mostra as tarefas do grupo ou contato.\n` +
-            `▪ *eventos*: mostra os eventos do grupo ou contato.`,
-        });
+        const messageText =
+          "🟢 *Agente online*\n" +
+          `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
+          `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
+          "\n\n" +
+          "🤖 *Comandos disponíveis:*\n" +
+          `▪ *atender*: ativa/desativa todas solicitações.\n` +
+          `▪ *notificar*: ativa/desativa todas notificações.\n` +
+          `▪ *agenda*: mostra tarefas e eventos do grupo ou contato.\n` +
+          `▪ *tarefas*: mostra as tarefas do grupo ou contato.\n` +
+          `▪ *eventos*: mostra os eventos do grupo ou contato.`;
+        if (expirationTime > 0) {
+          await sock.sendMessage(jid, { disappearingMessagesInChat: expirationTime });
+          await sock.sendMessage(jid, { text: messageText }, { ephemeralExpiration: expirationTime });
+        } else {
+          await sock.sendMessage(sender, {
+            text: messageText,
+          });
+        }
+
         continue;
       } else if (["atender"].includes(messageProcessed)) {
         dataStore.listen = !dataStore.listen;
