@@ -338,8 +338,8 @@ async function runWhatsAppBot() {
           `▪ *tarefas*: mostra as tarefas do grupo ou contato.\n` +
           `▪ *eventos*: mostra os eventos do grupo ou contato.`;
         if (expirationTime > 0) {
-          await sock.sendMessage(jid, { disappearingMessagesInChat: expirationTime });
-          await sock.sendMessage(jid, { text: messageText }, { ephemeralExpiration: expirationTime });
+          await sock.sendMessage(sender, { disappearingMessagesInChat: expirationTime });
+          await sock.sendMessage(sender, { text: messageText }, { ephemeralExpiration: expirationTime });
         } else {
           await sock.sendMessage(sender, {
             text: messageText,
