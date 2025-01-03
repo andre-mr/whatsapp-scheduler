@@ -406,7 +406,6 @@ async function runWhatsAppBot() {
 
         continue;
       } else if (["status"].includes(messageProcessed) && isAuthorized) {
-        console.log(JSON.stringify(dataStore[senderJid], null, 2));
         if (dataStore[senderJid]) {
           const messageText =
             "🟢 *Agente online*\n" +
