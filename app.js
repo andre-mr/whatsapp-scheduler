@@ -44,24 +44,70 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Dados em memória para agendamentos
-const dataStore = {
-  events: [],
-  tasks: [],
-  ownnumber: "",
-  authorized: [], // Substitua pelos números autorizados
-  notify: true, // Notificações ativas
+// Dados em memória para configs globais
+const configStore = {
+  admin: [], // Números autorizados
   listen: true, // Atende solicitações
   mentions: true, // Responder apenas a menções
-  timezone: "America/Sao_Paulo",
-  waversion: [2, 3000, 1015901307],
+  notify: true, // Notificações ativas
+  ownnumber: "", // Número do próprio bot
+  timezone: "America/Sao_Paulo", // fuso horário para exibir datas
+  waversion: [2, 3000, 1019066527], // versão do whatsapp web
 };
 
+const defaultUserData = {
+  configs: { expiration: 0, listen: true, notify: true, timezone: "America/Sao_Paulo" },
+  events: [],
+  tasks: [],
+};
+
+const defaultGroupData = {
+  configs: { expiration: 0, listen: true, notify: true, mentions: false, timezone: "America/Sao_Paulo" },
+  events: [],
+  tasks: [],
+};
+
+// Dados em memória para agendamentos
+const dataStore = {};
+
+const configFilePath = path.join(__dirname, "./modules/config.json");
 const dataFilePath = path.join(__dirname, "./modules/data.json");
 
 // Funções para manipular dados persistentes
+function saveConfig() {
+  fs.writeFileSync(configFilePath, JSON.stringify(configStore, null, 2));
+}
 function saveData() {
   fs.writeFileSync(dataFilePath, JSON.stringify(dataStore, null, 2));
+}
+
+function loadConfig() {
+  if (fs.existsSync(configFilePath)) {
+    try {
+      const rawConfig = fs.readFileSync(configFilePath, "utf8");
+      const loadedConfig = JSON.parse(rawConfig);
+
+      // Garantir que a estrutura padrão prevaleça
+      Object.keys(configStore).forEach((key) => {
+        if (!(key in loadedConfig)) {
+          loadedConfig[key] = configStore[key]; // Preenche valores ausentes com os padrões
+        }
+      });
+
+      // Substituir o dataStore em memória com os valores corrigidos
+      Object.assign(configStore, loadedConfig);
+
+      // Persistir as correções no arquivo
+      saveConfig();
+    } catch (error) {
+      consoleLogColor("Erro ao carregar config.json. Recriando com valores padrão.", ConsoleColors.RED);
+      fs.writeFileSync(configFilePath, JSON.stringify(configStore, null, 2));
+    }
+  } else {
+    // Criar arquivo com valores padrão caso não exista
+    fs.writeFileSync(configFilePath, JSON.stringify(configStore, null, 2));
+    consoleLogColor("Arquivo config.json criado com valores padrão.", ConsoleColors.YELLOW);
+  }
 }
 
 function loadData() {
@@ -93,6 +139,7 @@ function loadData() {
   }
 }
 
+loadConfig();
 loadData();
 
 let state, saveCreds, currentVersion, sock;
@@ -100,7 +147,7 @@ let state, saveCreds, currentVersion, sock;
 // Função para obter a versão do WhatsApp
 async function getWhatsAppVersion() {
   const latestVersionCustom = await fetchWhatsAppVersion();
-  const configVersion = dataStore.waversion;
+  const configVersion = configStore.waversion;
 
   const compareVersions = (v1, v2) => {
     for (let i = 0; i < 3; i++) {
@@ -114,14 +161,14 @@ async function getWhatsAppVersion() {
 
   if (!configVersion.every((v, i) => v === currentVersion[i])) {
     consoleLogColor(`Versão do WhatsApp: ${currentVersion.join(".")}`, ConsoleColors.CYAN);
-    dataStore.waversion = currentVersion;
-    saveData();
+    configStore.waversion = currentVersion;
+    saveConfig();
   }
 
   return currentVersion;
 }
 
-// Limpeza de arquivos antigos
+// Limpeza de arquivos de autenticação antigos
 async function clearOldFiles(directory, retentionDays) {
   const dirPath = path.resolve(directory);
 
@@ -159,47 +206,66 @@ async function clearOldFiles(directory, retentionDays) {
   }
 }
 
+// Função para enviar mensagens verificando a configuração de expiração
+async function handleSendMessage(jid, message) {
+  if (dataStore[jid].configs.expiration > 0) {
+    await sock.sendMessage(jid, { disappearingMessagesInChat: dataStore[jid].configs.expiration });
+    await sock.sendMessage(jid, { text: message }, { ephemeralExpiration: dataStore[jid].configs.expiration });
+  } else {
+    await sock.sendMessage(jid, { text: message });
+  }
+}
+
 // Função para verificar eventos e disparar mensagens
 function scheduleEvents() {
   setInterval(async () => {
     const now = new Date();
 
     // Expurgo de eventos passados, independentemente de notificações ativas
-    dataStore.events = dataStore.events.filter((event) => {
-      const eventTime = new Date(event.datetime);
-      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
-      const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
+    Object.values(dataStore).forEach((storeItem) => {
+      if (storeItem.events) {
+        storeItem.events = storeItem.events.filter((event) => {
+          const eventTime = new Date(event.datetime);
+          const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
+          const delayLimit = new Date(notifyTime.getTime() + 60 * 60 * 1000); // Permitir até 60 minutos após o horário de notificação
 
-      return now <= delayLimit; // Manter eventos dentro da janela de tolerância
+          return now <= delayLimit; // Manter eventos dentro da janela de tolerância
+        });
+      }
     });
 
-    if (!dataStore.notify) {
+    if (!configStore.notify) {
       saveData(); // Garantir que o expurgo seja persistido mesmo sem notificações
       return; // Sem notificações, sair da função
     }
 
-    // Filtrar eventos que devem ser notificados
-    const dueEvents = dataStore.events.filter((event) => {
-      const eventTime = new Date(event.datetime);
-      const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
-      return now >= notifyTime; // Dentro do horário de notificação
-    });
-
-    for (const event of dueEvents) {
-      // Enviar mensagem ao solicitante
-      try {
-        await sock.sendMessage(event.sender, {
-          text: `⏰ *${event.description}*\nEm: ${new Date(event.datetime).toLocaleString("pt-BR", {
-            timeZone: dataStore.timezone,
-          })}.`,
+    // Filtrar eventos que devem ser notificados e enviar mensagens
+    Object.entries(dataStore).forEach(async ([senderJid, storeItem]) => {
+      if (storeItem.events) {
+        // Verifica se o objeto interno tem o atributo events
+        const dueEvents = storeItem.events.filter((event) => {
+          const eventTime = new Date(event.datetime);
+          const notifyTime = new Date(eventTime.getTime() - (event.notify || 0) * 60 * 1000);
+          return now >= notifyTime; // Dentro do horário de notificação
         });
-        consoleLogColor(`Lembrete enviado para ${event.sender}: "${event.description}"`, ConsoleColors.GREEN);
-        // Remover evento após enviar notificação com sucesso
-        dataStore.events = dataStore.events.filter((e) => e !== event);
-      } catch (error) {
-        consoleLogColor(`Erro ao enviar lembrete para ${event.sender}: ${error}`, ConsoleColors.RED);
+
+        for (const event of dueEvents) {
+          try {
+            // Enviar mensagem ao solicitante
+            const messageText = `⏰ *${event.description}*\nEm: ${new Date(event.datetime).toLocaleString("pt-BR", {
+              timeZone: storeItem.configs.timezone,
+            })}.`;
+            handleSendMessage(senderJid, messageText);
+            consoleLogColor(`Lembrete enviado para ${senderJid}: "${event.description}"`, ConsoleColors.GREEN);
+
+            // Remover evento após enviar notificação com sucesso
+            storeItem.events = storeItem.events.filter((e) => e !== event);
+          } catch (error) {
+            consoleLogColor(`Erro ao enviar lembrete para ${senderJid}: ${error}`, ConsoleColors.RED);
+          }
+        }
       }
-    }
+    });
 
     saveData(); // Persistir alterações no dataStore
   }, 60 * 1000); // Executar a cada 1 minuto
@@ -235,10 +301,10 @@ async function runWhatsAppBot() {
     const userNumber = sock.user?.id?.match(/^\d+/)?.[0];
 
     if (userNumber) {
-      if (!dataStore.ownnumber) {
+      if (!configStore.ownnumber) {
         consoleLogColor(`Número do bot registrado: ${userNumber}`, ConsoleColors.GREEN);
-        dataStore.ownnumber = userNumber;
-        saveData();
+        configStore.ownnumber = userNumber;
+        saveConfig();
       }
     }
 
@@ -247,18 +313,26 @@ async function runWhatsAppBot() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
-      const expirationTime = msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo?.expiration || 0;
+      const expirationTime = parseInt(
+        msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo?.expiration || "0"
+      );
       sock.readMessages([msg.key]);
 
       if (!msg.message || msg.key.fromMe || msg.key?.protocolMessage?.fromMe || msg.message?.protocolMessage) continue;
 
       const isFromGroup = msg.key.remoteJid.endsWith("@g.us");
-      const actualSender = isFromGroup ? msg.key.participant : msg.key.remoteJid; // Quem enviou a mensagem
-      const sender = isFromGroup ? msg.key.remoteJid : actualSender; // O grupo ou o número privado
+      const messageSender = isFromGroup ? msg.key.participant : msg.key.remoteJid; // Quem enviou a mensagem
+      const senderJid = isFromGroup ? msg.key.remoteJid : messageSender; // O grupo ou o número privado
 
-      // Checar se o remetente (quem enviou) está autorizado
-      const isAuthorized = dataStore.authorized.includes(actualSender);
-      if (!isAuthorized) continue;
+      // Checar se o remetente está autorizado ou o bot está no grupo
+      const isAdmin = configStore.admin.includes(messageSender);
+      const isAuthorized = isAdmin || dataStore[senderJid];
+      if (!isAuthorized && !isFromGroup) continue;
+
+      if (isFromGroup && !dataStore[senderJid]) {
+        dataStore[senderJid] = structuredClone(defaultGroupData);
+        saveData();
+      }
 
       let messageContent =
         msg.message?.conversation ||
@@ -267,107 +341,135 @@ async function runWhatsAppBot() {
         msg?.message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
         "";
 
-      // somente aceitar mensagens de grupo em menções se essa opção estiver ativada
-      if (isFromGroup && dataStore.mentions && !messageContent.includes(`@${dataStore.ownnumber}`)) {
+      // somente aceitar mensagens de grupo em menções (caso essa exigência esteja ativada)
+      if (
+        isFromGroup &&
+        (configStore.mentions || dataStore[senderJid]?.configs?.mentions) &&
+        !messageContent.includes(`@${configStore.ownnumber}`)
+      ) {
         continue;
       }
 
-      const messageProcessed = messageContent.replace(`@${dataStore.ownnumber}`, "").trim().toLowerCase();
+      const messageProcessed = messageContent.replace(`@${configStore.ownnumber}`, "").trim().toLowerCase();
 
-      if (/^adicionar(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed)) {
+      if (expirationTime) {
+        dataStore[senderJid].configs.expiration = expirationTime;
+        saveData();
+      }
+
+      if (/^adicionar(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed) && isAdmin) {
         const phoneNumber = messageProcessed.match(/@\d{11,15}/)?.[0].replace("@", "");
+
+        if (!isAdmin) {
+          continue;
+        }
 
         if (phoneNumber) {
           // adicionar a lista de autorizados
           const phoneNumberWhatsApp = phoneNumber + "@s.whatsapp.net";
-          if (dataStore.authorized.includes(phoneNumberWhatsApp)) {
-            await sock.sendMessage(sender, {
-              text: "❌ Usuário já está autorizado.",
-            });
+
+          if (dataStore[phoneNumberWhatsApp]) {
+            const messageText = "❌ Usuário já está autorizado.";
+            await handleSendMessage(senderJid, messageText);
           } else {
-            dataStore.authorized.push(phoneNumberWhatsApp);
+            dataStore[phoneNumberWhatsApp] = structuredClone(defaultUserData);
             saveData();
 
             consoleLogColor(`Usuário adicionado à lista de autorizados: ${phoneNumberWhatsApp}`, ConsoleColors.GREEN);
-            await sock.sendMessage(sender, {
-              text: "✅ Usuário adicionado.",
-            });
+
+            const messageText = "✅ Usuário adicionado.";
+            await handleSendMessage(senderJid, messageText);
           }
         }
 
         continue;
-      } else if (/^remover(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed)) {
+      } else if (/^remover(?: usuário| usuario)? @\d{11,15}$/i.test(messageProcessed) && isAdmin) {
         const phoneNumber = messageProcessed.match(/@\d{11,15}/)?.[0].replace("@", "");
 
         if (phoneNumber) {
           // remover da lista de autorizados
           const phoneNumberWhatsApp = phoneNumber + "@s.whatsapp.net";
-          if (dataStore.authorized.includes(phoneNumberWhatsApp)) {
-            if (dataStore.authorized.length <= 1) {
-              await sock.sendMessage(sender, {
-                text: "❌ Não é possível remover o único usuário autorizado.",
-              });
 
-              continue;
-            }
-            dataStore.authorized = dataStore.authorized.filter((num) => num !== phoneNumberWhatsApp);
+          if (!dataStore[phoneNumberWhatsApp]) {
+            const messageText = "❌ Usuário não encontrado.";
+            await handleSendMessage(senderJid, messageText);
+          } else {
+            delete dataStore[phoneNumberWhatsApp];
             saveData();
 
             consoleLogColor(`Usuário removido da lista de autorizados: ${phoneNumberWhatsApp}`, ConsoleColors.GREEN);
-            await sock.sendMessage(sender, {
-              text: "✅ Usuário removido.",
-            });
-          } else {
-            await sock.sendMessage(sender, {
-              text: "❌ Usuário não encontrado.",
-            });
+
+            const messageText = "✅ Usuário removido.";
+            await handleSendMessage(senderJid, messageText);
           }
         }
 
         continue;
-      } else if (["status"].includes(messageProcessed)) {
-        const messageText =
-          "🟢 *Agente online*\n" +
-          `${dataStore.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
-          `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
-          "\n\n" +
-          "🤖 *Comandos disponíveis:*\n" +
-          `▪ *atender*: ativa/desativa todas solicitações.\n` +
-          `▪ *notificar*: ativa/desativa todas notificações.\n` +
-          `▪ *agenda*: mostra tarefas e eventos do grupo ou contato.\n` +
-          `▪ *tarefas*: mostra as tarefas do grupo ou contato.\n` +
-          `▪ *eventos*: mostra os eventos do grupo ou contato.`;
-        if (expirationTime > 0) {
-          await sock.sendMessage(sender, { disappearingMessagesInChat: expirationTime });
-          await sock.sendMessage(sender, { text: messageText }, { ephemeralExpiration: expirationTime });
-        } else {
-          await sock.sendMessage(sender, {
-            text: messageText,
-          });
+      } else if (["status"].includes(messageProcessed) && isAuthorized) {
+        console.log(JSON.stringify(dataStore[senderJid], null, 2));
+        if (dataStore[senderJid]) {
+          const messageText =
+            "🟢 *Agente online*\n" +
+            `${dataStore[senderJid].configs.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
+            `${dataStore[senderJid].configs.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
+            `${
+              dataStore[senderJid].configs.mentions !== undefined
+                ? dataStore[senderJid].configs.mentions
+                  ? "\n✅ Menções ativadas."
+                  : "\n❌ Menções desativadas."
+                : ""
+            }` +
+            "\n\n" +
+            "🤖 *Comandos disponíveis:*\n" +
+            `▪ *atender*: ativa/desativa novas solicitações.\n` +
+            `▪ *notificar*: ativa/desativa todas notificações.\n` +
+            `${
+              dataStore[senderJid].configs.mentions !== undefined
+                ? "▪ *mencionar*: ativa/desativa exigência de menções.\n"
+                : ""
+            }` +
+            `▪ *agenda*: mostra tarefas e eventos.\n` +
+            `▪ *tarefas*: mostra as tarefas.\n` +
+            `▪ *eventos*: mostra os eventos.`;
+
+          await handleSendMessage(senderJid, messageText);
         }
 
         continue;
-      } else if (["atender"].includes(messageProcessed)) {
-        dataStore.listen = !dataStore.listen;
-        await sock.sendMessage(sender, {
-          text: `${
-            dataStore.listen ? "✅ Ativado, aguardando solicitações." : "❌ Desativado, ignorando solicitações."
-          }`,
-        });
+      } else if (["atender"].includes(messageProcessed) && isAuthorized) {
+        dataStore[senderJid].configs.listen = !dataStore[senderJid].configs.listen;
+
+        const messageText = `${
+          dataStore[senderJid].configs.listen
+            ? "✅ Ativado, aguardando solicitações."
+            : "❌ Desativado, ignorando solicitações."
+        }`;
+        await handleSendMessage(senderJid, messageText);
+        saveData();
         continue;
-      } else if (["notificar"].includes(messageProcessed)) {
-        dataStore.notify = !dataStore.notify;
-        await sock.sendMessage(sender, {
-          text: `${dataStore.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`,
-        });
+      } else if (["notificar"].includes(messageProcessed) && isAuthorized) {
+        dataStore[senderJid].configs.notify = !dataStore[senderJid].configs.notify;
+        await handleSendMessage(
+          senderJid,
+          `${dataStore[senderJid].configs.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}`
+        );
+        saveData();
+        continue;
+      } else if (
+        ["mencionar"].includes(messageProcessed) &&
+        dataStore[senderJid].configs.mentions !== undefined &&
+        isAuthorized
+      ) {
+        dataStore[senderJid].configs.mentions = !dataStore[senderJid].configs.mentions;
+        await handleSendMessage(
+          senderJid,
+          `${dataStore[senderJid].configs.mentions ? "✅ Menções ativadas." : "❌ Menções desativadas."}`
+        );
+        saveData();
         continue;
       } else if (["agenda", "compromissos", "mostre", "tudo", "lista"].includes(messageProcessed)) {
-        const tasks = dataStore.tasks
-          .filter((task) => task.sender === sender)
-          .map((task, i) => `*${i + 1}.* ${task.description}`)
-          .join("\n");
-        const events = dataStore.events
-          .filter((event) => event.sender === sender)
+        const tasks = dataStore[senderJid].tasks.map((task, i) => `*${i + 1}.* ${task.description}`).join("\n");
+        const events = dataStore[senderJid].events
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
@@ -382,28 +484,25 @@ async function runWhatsAppBot() {
           )
           .join("\n");
 
-        await sock.sendMessage(sender, {
-          text:
-            (tasks && tasks.length > 0) || (events && events.length > 0)
-              ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
-              : "Nenhum item encontrado.",
-        });
+        await handleSendMessage(
+          senderJid,
+          (tasks && tasks.length > 0) || (events && events.length > 0)
+            ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
+            : "Nenhum item encontrado."
+        );
 
         continue;
       } else if (["tarefas"].includes(messageProcessed)) {
-        const tasks = dataStore.tasks
-          .filter((task) => task.sender === sender)
-          .map((task, i) => `*${i + 1}.* ${task.description}`)
-          .join("\n");
+        const tasks = dataStore[senderJid].tasks.map((task, i) => `*${i + 1}.* ${task.description}`).join("\n");
 
-        await sock.sendMessage(sender, {
-          text: tasks && tasks.length > 0 ? `📋 Tarefas:\n${tasks}` : "Nenhum item encontrado.",
-        });
+        await handleSendMessage(
+          senderJid,
+          tasks && tasks.length > 0 ? `📋 Tarefas:\n${tasks}` : "Nenhum item encontrado."
+        );
 
         continue;
       } else if (["eventos"].includes(messageProcessed)) {
-        const events = dataStore.events
-          .filter((event) => event.sender === sender)
+        const events = dataStore[senderJid].events
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
@@ -418,24 +517,23 @@ async function runWhatsAppBot() {
           )
           .join("\n");
 
-        await sock.sendMessage(sender, {
-          text: events && events.length > 0 ? `📅 Eventos:\n${events}` : "Nenhum item encontrado.",
-        });
+        await handleSendMessage(
+          senderJid,
+          events && events.length > 0 ? `📅 Eventos:\n${events}` : "Nenhum item encontrado."
+        );
 
         continue;
       }
 
-      if (!dataStore.listen) {
+      if (!configStore.listen || !dataStore[senderJid].configs.listen) {
         continue;
-      } else if (["adicionar usuario", "adicionar usuário"].includes(messageProcessed)) {
-        //
       }
 
-      if (messageContent.includes(`@${dataStore.ownnumber}`)) {
-        messageContent = messageContent.replace(`@${dataStore.ownnumber}`, "").trim();
+      if (messageContent.includes(`@${configStore.ownnumber}`)) {
+        messageContent = messageContent.replace(`@${configStore.ownnumber}`, "").trim();
       }
 
-      consoleLogColor(`Mensagem recebida de ${sender}: ${messageContent}`, ConsoleColors.BRIGHT);
+      consoleLogColor(`Mensagem recebida de ${senderJid}: ${messageContent}`, ConsoleColors.BRIGHT);
 
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
@@ -464,18 +562,10 @@ async function runWhatsAppBot() {
             {
               role: "user",
               content: `Transforme a mensagem abaixo em JSON baseado nas informações fornecidas:
-              - **Fuso horário:** ${dataStore.timezone}
+              - **Fuso horário:** ${dataStore[senderJid].configs.timezone || configStore.timezone}
               - **Data/hora atual em ISOstring:** ${currentDateTimeISO}
-              - **Tarefas existentes:** ${JSON.stringify(
-                dataStore.tasks.filter((task) => task.sender === sender),
-                null,
-                2
-              )}
-              - **Eventos existentes:** ${JSON.stringify(
-                dataStore.events.filter((event) => event.sender === sender),
-                null,
-                2
-              )}
+              - **Tarefas existentes:** ${JSON.stringify(dataStore[senderJid].tasks, null, 2)}
+              - **Eventos existentes:** ${JSON.stringify(dataStore[senderJid].events, null, 2)}
               - **Mensagem:** "${messageContent}"`,
             },
           ],
@@ -491,146 +581,125 @@ async function runWhatsAppBot() {
           consoleLogColor("JSON processado com sucesso.", ConsoleColors.GREEN);
         } else {
           // Capturar a resposta textual para envio ao usuário
-          await sock.sendMessage(sender, { text: content });
+          await handleSendMessage(senderJid, content);
           continue;
         }
       } catch (error) {
         console.error("Erro ao processar JSON da OpenAI:", error);
-        await sock.sendMessage(sender, {
-          text: "Houve um erro ao processar sua mensagem. Tente novamente mais tarde.",
-        });
+        await handleSendMessage(senderJid, "Houve um erro ao processar sua mensagem. Tente novamente mais tarde.");
         continue;
       }
 
       // Processar a resposta
       if (response.type === "event") {
         const notify = response.notify !== undefined ? response.notify : 0;
-        dataStore.events.push({
+        dataStore[senderJid].events.push({
           description: response.description,
           datetime: response.datetime, // ISO 8601 UTC
           notify, // Minutos antes para notificação
-          sender: sender, // Destinatário (grupo ou número privado)
+          sender: messageSender, // Solicitante
         });
 
         saveData();
 
-        await sock.sendMessage(sender, {
-          text: `✅ Evento *"${response.description}"*\nAgendado para *${new Date(response.datetime).toLocaleString(
-            "pt-BR",
-            { timeZone: dataStore.timezone }
-          )}*.\nNotificação ${
+        await handleSendMessage(
+          senderJid,
+          `✅ Evento *"${response.description}"*\nAgendado para *${new Date(response.datetime).toLocaleString("pt-BR", {
+            timeZone: dataStore[senderJid].configs.timezone,
+          })}*.\nNotificação ${
             response.notify !== undefined && response.notify > 0
               ? response.notify + response.notify == 1
                 ? " minuto antes."
                 : " minutos antes."
               : "na hora do evento."
-          }`,
-        });
+          }`
+        );
       } else if (response.type === "task") {
-        dataStore.tasks.push({ description: response.description, sender: sender });
+        dataStore[senderJid].tasks.push({ description: response.description, sender: messageSender });
         saveData();
-        await sock.sendMessage(sender, {
-          text: `✅ Tarefa "${response.description}" adicionada.`,
-        });
+        await handleSendMessage(senderJid, `✅ Tarefa "${response.description}" adicionada.`);
       } else if (response.type === "update") {
-        const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
-        const filteredList = targetList.filter((item) => item.sender === sender);
-
-        if (response.itemIndex < 0 || response.itemIndex >= filteredList.length) {
-          await sock.sendMessage(sender, {
-            text: "❌ Índice inválido para atualização.",
-          });
+        if (response.itemIndex < 0 || response.itemIndex >= targetList.length) {
+          await handleSendMessage(senderJid, "❌ Índice inválido para atualização.");
           continue;
         }
 
-        const itemToUpdate = filteredList[response.itemIndex];
-        const originalIndex = targetList.indexOf(itemToUpdate);
+        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
 
-        if (originalIndex === -1) {
-          await sock.sendMessage(sender, {
-            text: `❌ Não foi possível encontrar o item para atualização.`,
-          });
+        const itemToUpdate = targetList[response.itemIndex];
+
+        if (!itemToUpdate) {
+          await handleSendMessage(senderJid, `❌ Não foi possível encontrar o item para atualização.`);
           continue;
         }
 
-        // Atualiza os campos diretamente no array original
+        // Atualiza os campos
         if (response.fields?.datetime) {
-          targetList[originalIndex].datetime = response.fields.datetime;
+          targetList[response.itemIndex].datetime = response.fields.datetime;
         }
         if (response.fields?.description) {
-          targetList[originalIndex].description = response.fields.description;
+          targetList[response.itemIndex].description = response.fields.description;
         }
         if (response.fields?.notify !== undefined) {
-          targetList[originalIndex].notify = response.fields?.notify;
+          targetList[response.itemIndex].notify = response.fields.notify;
         }
 
         saveData();
 
-        await sock.sendMessage(sender, {
-          text:
-            `✅ ${response.target === "tasks" ? "Tarefa atualizada" : "Evento atualizado"} com sucesso.\n` +
-            `*${response.itemIndex + 1}.* ${targetList[originalIndex].description}` +
+        await handleSendMessage(
+          senderJid,
+          `✅ ${response.target === "tasks" ? "Tarefa atualizada" : "Evento atualizado"} com sucesso.\n` +
+            `*${response.itemIndex + 1}.* ${targetList[response.itemIndex].description}` +
             (response.target === "events"
-              ? `\n   ${new Date(targetList[originalIndex].datetime).toLocaleString("pt-BR", {
-                  timeZone: dataStore.timezone,
+              ? `\n   ${new Date(targetList[response.itemIndex].datetime).toLocaleString("pt-BR", {
+                  timeZone: dataStore[senderJid].configs.timezone,
                 })}\n   _(notificar ${
-                  targetList[originalIndex].notify !== undefined && targetList[originalIndex].notify > 0
-                    ? targetList[originalIndex].notify +
-                      (targetList[originalIndex].notify === 1 ? " minuto antes" : " minutos antes")
+                  targetList[response.itemIndex].notify !== undefined && targetList[response.itemIndex].notify > 0
+                    ? targetList[response.itemIndex].notify +
+                      (targetList[response.itemIndex].notify === 1 ? " minuto antes" : " minutos antes")
                     : "na hora do evento"
                 })_`
-              : ""),
-        });
+              : "")
+        );
       } else if (response.type === "remove") {
-        const targetList = response.target === "tasks" ? dataStore.tasks : dataStore.events;
-        const filteredList = targetList.filter((item) => item.sender === sender);
-
-        if (response.itemIndex < 0 || response.itemIndex >= filteredList.length) {
-          sock.sendMessage(sender, {
-            text: "❌ Falha na remoção.",
-          });
+        if (response.itemIndex < 0 || response.itemIndex >= targetList.length) {
+          await handleSendMessage(senderJid, "❌ Falha na remoção.");
           continue;
         }
 
-        // const removedItem = filteredList.splice(response.itemIndex, 1);
-        const itemToRemove = filteredList[response.itemIndex];
-        const originalIndex = targetList.indexOf(itemToRemove);
+        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
 
-        if (originalIndex !== -1) {
-          const removedItem = targetList.splice(originalIndex, 1);
+        if (response.itemIndex >= 0) {
+          const removedItem = targetList.splice(response.itemIndex, 1)?.[0];
           saveData();
 
-          await sock.sendMessage(sender, {
-            text: `✅ ${response.target === "tasks" ? "Tarefa" : "Evento"} "${removedItem[0]?.description}" ${
+          await handleSendMessage(
+            senderJid,
+            `✅ ${response.target === "tasks" ? "Tarefa" : "Evento"} "${removedItem?.description}" ${
               response.target === "tasks" ? "removida" : "removido"
-            }.`,
-          });
+            }.`
+          );
         } else {
-          await sock.sendMessage(sender, {
-            text: "❌ Não foi possível encontrar o item para remoção.",
-          });
+          await handleSendMessage(senderJid, "❌ Não foi possível encontrar o item para remoção.");
         }
       } else if (response.type === "clear") {
         if (response.target === "tasks" || response.target === "all") {
-          dataStore.tasks = dataStore.tasks.filter((task) => task.sender !== sender);
+          dataStore[senderJid].tasks = [];
         }
         if (response.target === "events" || response.target === "all") {
-          dataStore.events = dataStore.events.filter((event) => event.sender !== sender);
+          dataStore[senderJid].events = [];
         }
         saveData();
 
-        await sock.sendMessage(sender, {
-          text: `✅ Lista ${
+        await handleSendMessage(
+          senderJid,
+          `✅ Lista ${
             response.target === "tasks" ? "de tarefas" : response.target === "events" ? "de eventos" : "completa"
-          } foi limpa com sucesso.`,
-        });
+          } foi limpa com sucesso.`
+        );
       } else if (response.type === "query") {
-        const tasks = dataStore.tasks
-          .filter((task) => task.sender === sender)
-          .map((task, i) => `*${i + 1}.* ${task.description}`)
-          .join("\n");
-        const events = dataStore.events
-          .filter((event) => event.sender === sender)
+        const tasks = dataStore[senderJid].tasks.map((task, i) => `*${i + 1}.* ${task.description}`).join("\n");
+        const events = dataStore[senderJid].events
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
@@ -645,14 +714,14 @@ async function runWhatsAppBot() {
           )
           .join("\n");
 
-        await sock.sendMessage(sender, {
-          text:
-            (tasks && tasks.length > 0) || (events && events.length > 0)
-              ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
-              : "Nenhum item encontrado.",
-        });
+        await handleSendMessage(
+          senderJid,
+          (tasks && tasks.length > 0) || (events && events.length > 0)
+            ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
+            : "Nenhum item encontrado."
+        );
       } else {
-        await sock.sendMessage(sender, { text: "Não entendi sua solicitação. Reformule, por favor." });
+        await handleSendMessage(senderJid, "Não entendi sua solicitação. Reformule, por favor.");
       }
     }
   });
