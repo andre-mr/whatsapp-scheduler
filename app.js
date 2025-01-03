@@ -254,6 +254,11 @@ function scheduleEvents() {
             // Enviar mensagem ao solicitante
             const messageText = `⏰ *${event.description}*\nEm: ${new Date(event.datetime).toLocaleString("pt-BR", {
               timeZone: storeItem.configs.timezone,
+              hour: "2-digit",
+              minute: "2-digit",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
             })}.`;
             handleSendMessage(senderJid, messageText);
             consoleLogColor(`Lembrete enviado para ${senderJid}: "${event.description}"`, ConsoleColors.GREEN);
@@ -329,8 +334,8 @@ async function runWhatsAppBot() {
       const isAuthorized = isAdmin || dataStore[senderJid];
       if (!isAuthorized && !isFromGroup) continue;
 
-      if (isFromGroup && !dataStore[senderJid]) {
-        dataStore[senderJid] = structuredClone(defaultGroupData);
+      if (!dataStore[senderJid]) {
+        dataStore[senderJid] = isFromGroup ? structuredClone(defaultGroupData) : structuredClone(defaultUserData);
         saveData();
       }
 
@@ -408,7 +413,6 @@ async function runWhatsAppBot() {
       } else if (["status"].includes(messageProcessed) && isAuthorized) {
         if (dataStore[senderJid]) {
           const messageText =
-            "🟢 *Agente online*\n" +
             `${dataStore[senderJid].configs.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
             `${dataStore[senderJid].configs.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
             `${
@@ -417,6 +421,20 @@ async function runWhatsAppBot() {
                   ? "\n✅ Menções ativadas."
                   : "\n❌ Menções desativadas."
                 : ""
+            }` +
+            `\n📋 ${
+              dataStore[senderJid].tasks.length == 0
+                ? "Nenhuma tarefa"
+                : dataStore[senderJid].tasks.length == 1
+                ? "1 tarefa"
+                : `${dataStore[senderJid].tasks.length} tarefas`
+            }` +
+            `\n📅 ${
+              dataStore[senderJid].events.length == 0
+                ? "Nenhum evento"
+                : dataStore[senderJid].events.length == 1
+                ? "1 evento"
+                : `${dataStore[senderJid].events.length} eventos`
             }` +
             "\n\n" +
             "🤖 *Comandos disponíveis:*\n" +
@@ -473,6 +491,11 @@ async function runWhatsAppBot() {
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
                 timeZone: dataStore.timezone,
+                hour: "2-digit",
+                minute: "2-digit",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
               })}\n   _(notificar ${
                 event.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
@@ -486,7 +509,9 @@ async function runWhatsAppBot() {
         await handleSendMessage(
           senderJid,
           (tasks && tasks.length > 0) || (events && events.length > 0)
-            ? `📋 Tarefas:\n${tasks}\n\n📅 Eventos:\n${events}`
+            ? `📋 Tarefas:\n${tasks.length > 0 ? tasks : "Nenhum item encontrado"}\n\n📅 Eventos:\n${
+                events.length > 0 ? events : "Nenhum item encontrado"
+              }`
             : "Nenhum item encontrado."
         );
 
@@ -496,7 +521,7 @@ async function runWhatsAppBot() {
 
         await handleSendMessage(
           senderJid,
-          tasks && tasks.length > 0 ? `📋 Tarefas:\n${tasks}` : "Nenhum item encontrado."
+          tasks && tasks.length > 0 ? `📋 Tarefas:\n${tasks}` : "Nenhuma tarefa encontrada."
         );
 
         continue;
@@ -506,6 +531,11 @@ async function runWhatsAppBot() {
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
                 timeZone: dataStore.timezone,
+                hour: "2-digit",
+                minute: "2-digit",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
               })}\n   _(notificar ${
                 event.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
@@ -518,7 +548,7 @@ async function runWhatsAppBot() {
 
         await handleSendMessage(
           senderJid,
-          events && events.length > 0 ? `📅 Eventos:\n${events}` : "Nenhum item encontrado."
+          events && events.length > 0 ? `📅 Eventos:\n${events}` : "Nenhum evento encontrado."
         );
 
         continue;
@@ -605,6 +635,11 @@ async function runWhatsAppBot() {
           senderJid,
           `✅ Evento *"${response.description}"*\nAgendado para *${new Date(response.datetime).toLocaleString("pt-BR", {
             timeZone: dataStore[senderJid].configs.timezone,
+            hour: "2-digit",
+            minute: "2-digit",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
           })}*.\nNotificação ${
             response.notify !== undefined && response.notify > 0
               ? response.notify + response.notify == 1
@@ -652,6 +687,11 @@ async function runWhatsAppBot() {
             (response.target === "events"
               ? `\n   ${new Date(targetList[response.itemIndex].datetime).toLocaleString("pt-BR", {
                   timeZone: dataStore[senderJid].configs.timezone,
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
                 })}\n   _(notificar ${
                   targetList[response.itemIndex].notify !== undefined && targetList[response.itemIndex].notify > 0
                     ? targetList[response.itemIndex].notify +
@@ -703,6 +743,11 @@ async function runWhatsAppBot() {
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
                 timeZone: dataStore.timezone,
+                hour: "2-digit",
+                minute: "2-digit",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
               })}\n   _(notificar ${
                 event.notify !== undefined && event.notify > 0
                   ? event.notify + event.notify == 1
