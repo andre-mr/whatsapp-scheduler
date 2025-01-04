@@ -490,7 +490,7 @@ async function runWhatsAppBot() {
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
-                timeZone: dataStore.timezone,
+                timeZone: dataStore[senderJid].configs.timezone,
                 hour: "2-digit",
                 minute: "2-digit",
                 year: "numeric",
@@ -530,7 +530,7 @@ async function runWhatsAppBot() {
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
-                timeZone: dataStore.timezone,
+                timeZone: dataStore[senderJid].configs.timezone,
                 hour: "2-digit",
                 minute: "2-digit",
                 year: "numeric",
@@ -740,7 +740,7 @@ async function runWhatsAppBot() {
           .map(
             (event, i) =>
               `*${i + 1}. ${event.description}*\n   ${new Date(event.datetime).toLocaleString("pt-BR", {
-                timeZone: dataStore.timezone,
+                timeZone: dataStore[senderJid].configs.timezone,
                 hour: "2-digit",
                 minute: "2-digit",
                 year: "numeric",
