@@ -653,12 +653,11 @@ async function runWhatsAppBot() {
         saveData();
         await handleSendMessage(senderJid, `✅ Tarefa "${response.description}" adicionada.`);
       } else if (response.type === "update") {
+        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
         if (response.itemIndex < 0 || response.itemIndex >= targetList.length) {
           await handleSendMessage(senderJid, "❌ Índice inválido para atualização.");
           continue;
         }
-
-        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
 
         const itemToUpdate = targetList[response.itemIndex];
 
@@ -701,12 +700,11 @@ async function runWhatsAppBot() {
               : "")
         );
       } else if (response.type === "remove") {
+        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
         if (response.itemIndex < 0 || response.itemIndex >= targetList.length) {
           await handleSendMessage(senderJid, "❌ Falha na remoção.");
           continue;
         }
-
-        const targetList = response.target === "tasks" ? dataStore[senderJid].tasks : dataStore[senderJid].events;
 
         if (response.itemIndex >= 0) {
           const removedItem = targetList.splice(response.itemIndex, 1)?.[0];
