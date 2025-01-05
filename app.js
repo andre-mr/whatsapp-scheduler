@@ -48,7 +48,7 @@ const openai = new OpenAI({
 const configStore = {
   admin: [], // Números autorizados
   listen: true, // Atende solicitações
-  mentions: true, // Responder apenas a menções
+  freemode: true, // Responde sem precisar menções
   notify: true, // Notificações ativas
   ownnumber: "", // Número do próprio bot
   timezone: "America/Sao_Paulo", // fuso horário para exibir datas
@@ -62,7 +62,7 @@ const defaultUserData = {
 };
 
 const defaultGroupData = {
-  configs: { expiration: 0, listen: true, notify: true, mentions: false, timezone: "America/Sao_Paulo" },
+  configs: { expiration: 0, listen: true, notify: true, freemode: true, timezone: "America/Sao_Paulo" },
   events: [],
   tasks: [],
 };
@@ -349,7 +349,7 @@ async function runWhatsAppBot() {
       // somente aceitar mensagens de grupo em menções (caso essa exigência esteja ativada)
       if (
         isFromGroup &&
-        (configStore.mentions || dataStore[senderJid]?.configs?.mentions) &&
+        (!configStore.freemode || !dataStore[senderJid]?.configs?.freemode) &&
         !messageContent.includes(`@${configStore.ownnumber}`)
       ) {
         continue;
@@ -416,10 +416,10 @@ async function runWhatsAppBot() {
             `${dataStore[senderJid].configs.listen ? "✅ Aguardando solicitações." : "❌ Ignorando solicitações."}\n` +
             `${dataStore[senderJid].configs.notify ? "✅ Notificações ativadas." : "❌ Notificações desativadas."}` +
             `${
-              dataStore[senderJid].configs.mentions !== undefined
-                ? dataStore[senderJid].configs.mentions
-                  ? "\n✅ Menções ativadas."
-                  : "\n❌ Menções desativadas."
+              dataStore[senderJid].configs.freemode !== undefined
+                ? dataStore[senderJid].configs.freemode
+                  ? "\n✅ Qualquer mensagem."
+                  : "\n❌ Menções ativadas."
                 : ""
             }` +
             `\n📋 ${
@@ -441,11 +441,11 @@ async function runWhatsAppBot() {
             `▪ *atender*: ativa/desativa novas solicitações.\n` +
             `▪ *notificar*: ativa/desativa todas notificações.\n` +
             `${
-              dataStore[senderJid].configs.mentions !== undefined
-                ? "▪ *mencionar*: ativa/desativa exigência de menções.\n"
+              dataStore[senderJid].configs.freemode !== undefined
+                ? "▪ *livre*: ativa/desativa mensagens sem menções.\n"
                 : ""
             }` +
-            `▪ *agenda*: mostra tarefas e eventos.\n` +
+            `▪▫ *agenda*: mostra tarefas e eventos.\n` +
             `▪ *tarefas*: mostra as tarefas.\n` +
             `▪ *eventos*: mostra os eventos.`;
 
@@ -473,14 +473,14 @@ async function runWhatsAppBot() {
         saveData();
         continue;
       } else if (
-        ["mencionar"].includes(messageProcessed) &&
-        dataStore[senderJid].configs.mentions !== undefined &&
+        ["livre"].includes(messageProcessed) &&
+        dataStore[senderJid].configs.freemode !== undefined &&
         isAuthorized
       ) {
-        dataStore[senderJid].configs.mentions = !dataStore[senderJid].configs.mentions;
+        dataStore[senderJid].configs.freemode = !dataStore[senderJid].configs.freemode;
         await handleSendMessage(
           senderJid,
-          `${dataStore[senderJid].configs.mentions ? "✅ Menções ativadas." : "❌ Menções desativadas."}`
+          `${dataStore[senderJid].configs.freemode ? "✅ Qualquer mensagem." : "❌ Menções ativadas."}`
         );
         saveData();
         continue;
