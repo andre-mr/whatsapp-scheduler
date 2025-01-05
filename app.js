@@ -445,7 +445,7 @@ async function runWhatsAppBot() {
                 ? "▪ *livre*: ativa/desativa mensagens sem menções.\n"
                 : ""
             }` +
-            `▪▫ *agenda*: mostra tarefas e eventos.\n` +
+            `▪ *agenda*: mostra tarefas e eventos.\n` +
             `▪ *tarefas*: mostra as tarefas.\n` +
             `▪ *eventos*: mostra os eventos.`;
 
