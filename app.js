@@ -146,7 +146,7 @@ let state, saveCreds, currentVersion, sock;
 
 // Função para obter a versão do WhatsApp
 async function getWhatsAppVersion() {
-  const latestVersionCustom = await fetchWhatsAppVersion();
+  const latestVersion = await fetchWhatsAppVersion();
   const configVersion = configStore.waversion;
 
   const compareVersions = (v1, v2) => {
@@ -157,7 +157,10 @@ async function getWhatsAppVersion() {
     return v1;
   };
 
-  const currentVersion = compareVersions(configVersion, latestVersionCustom || []);
+  let currentVersion = configVersion;
+  if (latestVersion) {
+    currentVersion = compareVersions(configVersion, latestVersion || []);
+  }
 
   if (!configVersion.every((v, i) => v === currentVersion[i])) {
     consoleLogColor(`Versão do WhatsApp: ${currentVersion.join(".")}`, ConsoleColors.CYAN);
