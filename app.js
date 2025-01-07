@@ -211,6 +211,8 @@ async function clearOldFiles(directory, retentionDays) {
 
 // Função para enviar mensagens verificando a configuração de expiração
 async function handleSendMessage(jid, message) {
+  await new Promise((resolve) => setTimeout(resolve, Math.random() * 1000));
+
   if (dataStore[jid].configs.expiration > 0) {
     await sock.sendMessage(jid, { disappearingMessagesInChat: dataStore[jid].configs.expiration });
     await sock.sendMessage(jid, { text: message }, { ephemeralExpiration: dataStore[jid].configs.expiration });
@@ -290,6 +292,215 @@ async function runWhatsAppBot() {
     logger: pino({ level: "silent" }),
   });
 
+  function interpretMessage(message, currentDateTimeISO, senderJid, dataStore) {
+    const lowerCaseMessage = message.toLowerCase().trim();
+
+    // Função auxiliar para interpretar tempo em "hoje", "amanhã", "em x dias" ou data específica
+    function parseDateFromMessage(message) {
+      const now = new Date(currentDateTimeISO);
+
+      // "hoje"
+      if (/(hoje às|hoje) (\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2}|\d{1,2})/.test(message)) {
+        const timeMatch = message.match(/\d{1,2}(?::\d{2}(?::\d{2})?)?/); // Captura "HH", "HH:MM", ou "HH:MM:SS"
+        if (timeMatch) {
+          const [hours, minutes = 0, seconds = 0] = timeMatch[0].split(":").map(Number); // Define minutos/segundos padrão como 0
+          now.setHours(hours, minutes, seconds, 0);
+          return now.toISOString();
+        }
+      }
+
+      // "amanhã"
+      if (/(amanhã às|amanhã) (\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2}|\d{1,2})/.test(message)) {
+        const timeMatch = message.match(/\d{1,2}(?::\d{2}(?::\d{2})?)?/); // Captura "HH", "HH:MM", ou "HH:MM:SS"
+        if (timeMatch) {
+          const [hours, minutes = 0, seconds = 0] = timeMatch[0].split(":").map(Number); // Define minutos/segundos padrão como 0
+          now.setDate(now.getDate() + 1);
+          now.setHours(hours, minutes, seconds, 0);
+          return now.toISOString();
+        }
+      }
+
+      // "em x dias"
+      if (/(em|daqui|daqui a) \d+ dias/.test(message)) {
+        const daysMatch = message.match(/em (\d+) dias/);
+        if (daysMatch) {
+          const days = parseInt(daysMatch[1], 10);
+          now.setDate(now.getDate() + days);
+          now.setHours(8, 0, 0, 0); // Hora padrão 08:00:00
+          return now.toISOString();
+        }
+      }
+
+      // "em x minutos" ou "em x horas"
+      if (/(em|daqui|daqui a) \d+ (minutos|horas)/.test(message)) {
+        const timeMatch = message.match(/em (\d+) (minutos|horas)/);
+        if (timeMatch) {
+          const value = parseInt(timeMatch[1], 10);
+          if (timeMatch[2] === "minutos") {
+            now.setMinutes(now.getMinutes() + value);
+          } else if (timeMatch[2] === "horas") {
+            now.setHours(now.getHours() + value);
+          }
+          return now.toISOString();
+        }
+      }
+
+      // "dia DD/MM" ou "em DD/MM/YYYY"
+      if (/dia \d{1,2}\/\d{1,2}/.test(message) || /em \d{1,2}\/\d{1,2}(\/\d{4})?/.test(message)) {
+        const dateMatch = message.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+        if (dateMatch) {
+          const day = parseInt(dateMatch[1], 10);
+          const month = parseInt(dateMatch[2], 10) - 1; // Meses começam em 0 no JS
+          const year = dateMatch[3] ? parseInt(dateMatch[3], 10) : now.getFullYear();
+          now.setFullYear(year, month, day);
+          now.setHours(8, 0, 0, 0); // Hora padrão 08:00:00
+          return now.toISOString();
+        }
+      }
+
+      return null; // Não conseguiu interpretar
+    }
+
+    // "nova tarefa:" ou variações
+    if (
+      lowerCaseMessage.startsWith("nova tarefa:") ||
+      lowerCaseMessage.startsWith("criar tarefa:") ||
+      lowerCaseMessage.startsWith("tarefa:")
+    ) {
+      const description = message.replace(/^(nova tarefa:|criar tarefa:|tarefa:)/i, "").trim();
+      if (description) {
+        return {
+          type: "task",
+          description,
+        };
+      }
+    }
+
+    // "remover" ou "apagar"
+    if (
+      lowerCaseMessage.startsWith("remover ") ||
+      lowerCaseMessage.startsWith("apagar ") ||
+      lowerCaseMessage.startsWith("excluir ")
+    ) {
+      const description = message.replace(/^(remover |apagar |excluir )/i, "").trim();
+      const taskIndex = dataStore[senderJid]?.tasks.findIndex((task) => task.description === description);
+      const eventIndex = dataStore[senderJid]?.events.findIndex((event) => event.description === description);
+
+      if (taskIndex !== -1) {
+        return {
+          type: "remove",
+          target: "tasks",
+          itemIndex: taskIndex,
+        };
+      } else if (eventIndex !== -1) {
+        return {
+          type: "remove",
+          target: "events",
+          itemIndex: eventIndex,
+        };
+      }
+    }
+
+    // "limpar tarefas" ou "limpar eventos"
+    if (["limpar tarefas", "apagar tarefas", "remover tarefas", "excluir tarefas"].includes(lowerCaseMessage)) {
+      return {
+        type: "clear",
+        target: "tasks",
+      };
+    } else if (["limpar eventos", "apagar eventos", "remover eventos", "excluir eventos"].includes(lowerCaseMessage)) {
+      return {
+        type: "clear",
+        target: "events",
+      };
+    } else if (["limpar tudo", "apagar tudo", "remover tudo", "excluir tudo"].includes(lowerCaseMessage)) {
+      return {
+        type: "clear",
+        target: "all",
+      };
+    }
+
+    // detectar padrões para eventos
+    if (
+      /^(evento:|novo evento:|adicionar evento:)?\s?.{2,} (hoje|amanhã|em \d+ dias|em \d+ (minutos|horas)|às \d{1,2}[:h]\d{2}|em \d{1,2}\/\d{1,2}(?:\/\d{4})?)/.test(
+        lowerCaseMessage
+      )
+    ) {
+      const datetime = parseDateFromMessage(lowerCaseMessage);
+      if (datetime) {
+        const description = message
+          .replace(
+            /^(evento:|novo evento:|adicionar evento:)?\s?(hoje|amanhã|em \d+ dias|em \d+ (minutos|horas)|às \d{1,2}[:h]\d{2}|em \d{1,2}\/\d{1,2}(?:\/\d{4})?)/gi,
+            ""
+          )
+          .trim();
+        return {
+          type: "event",
+          description: description || "Evento sem descrição",
+          datetime,
+          notify: 0,
+        };
+      }
+    }
+
+    // alteração em tarefas ou eventos
+    if (/mudar .+ para .+/.test(lowerCaseMessage)) {
+      const parts = message.match(/mudar (.+) para (.+)/i);
+      if (parts) {
+        const targetDescription = parts[1].trim(); // Descrição do item a ser alterado
+        const newDetails = parts[2].trim(); // Detalhes após "para"
+
+        // Verifica se é tarefa ou evento
+        const taskIndex = dataStore[senderJid]?.tasks.findIndex(
+          (task) => task.description.toLowerCase() === targetDescription.toLowerCase()
+        );
+        const eventIndex = dataStore[senderJid]?.events.findIndex(
+          (event) => event.description.toLowerCase() === targetDescription.toLowerCase()
+        );
+
+        if (taskIndex !== -1) {
+          // Se for uma tarefa, alterar descrição
+          dataStore[senderJid].tasks[taskIndex].description = newDetails;
+          return {
+            type: "update",
+            target: "tasks",
+            itemIndex: taskIndex,
+            fields: { description: newDetails },
+          };
+        } else if (eventIndex !== -1) {
+          // Se for um evento, verificar se "newDetails" é data/hora ou nova descrição
+          const newDatetime = parseDateFromMessage(newDetails);
+          if (newDatetime) {
+            dataStore[senderJid].events[eventIndex].datetime = newDatetime;
+            return {
+              type: "update",
+              target: "events",
+              itemIndex: eventIndex,
+              fields: { datetime: newDatetime },
+            };
+          } else {
+            dataStore[senderJid].events[eventIndex].description = newDetails;
+            return {
+              type: "update",
+              target: "events",
+              itemIndex: eventIndex,
+              fields: { description: newDetails },
+            };
+          }
+        }
+      }
+    }
+
+    // "consultar" ou "mostrar"
+    if (["agenda", "tarefas", "eventos", "compromissos"].includes(lowerCaseMessage)) {
+      return {
+        type: "query",
+        queryType: lowerCaseMessage === "tarefas" ? "tasks" : lowerCaseMessage === "eventos" ? "events" : "both",
+      };
+    }
+
+    return null; // Caso nenhuma detecção tenha sido feita
+  }
+
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
@@ -321,6 +532,9 @@ async function runWhatsAppBot() {
 
   sock.ev.on("messages.upsert", async ({ messages }) => {
     for (const msg of messages) {
+      if (msg.message?.reactionMessage) {
+        continue;
+      }
       const expirationTime = parseInt(
         msg.message?.ephemeralMessage?.message?.extendedTextMessage?.contextInfo?.expiration || "0"
       );
@@ -570,14 +784,16 @@ async function runWhatsAppBot() {
       const now = new Date();
       const currentDateTimeISO = now.toISOString(); // ISO 8601 no UTC
 
-      let response;
-      try {
-        const openaiResponse = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            {
-              role: "system",
-              content: `Você é um assistente especializado em organizar eventos e tarefas. Interprete e responda solicitações de forma estruturada em JSON para gerenciar a agenda. 
+      let response = interpretMessage(messageContent, currentDateTimeISO, senderJid, dataStore);
+
+      if (response === null) {
+        try {
+          const openaiResponse = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: `Você é um assistente especializado em organizar eventos e tarefas. Interprete e responda solicitações de forma estruturada em JSON para gerenciar a agenda. 
               Utilize as seguintes categorias:
                 - **Eventos:** JSON com "type": "event", "description", "datetime" (ISO 8601 UTC) e "notify" (em minutos; padrão 0). Inclui pedidos com tempo absoluto ou relativo especificados
                   - Para eventos: se especificado tempo relativo, como "em x minutos ou x horas" defina o tempo futuro exato a contar do atual, se tempo absoluto como "às x horas ou dia x às x horas" defina esse date-time exato.
@@ -590,36 +806,37 @@ async function runWhatsAppBot() {
                 - **Remoções:** JSON com "type": "remove", "target" ("tasks" ou "events"), e "itemIndex".
                 - **Limpeza:** JSON com "type": "clear", "target" ("tasks", "events" ou "all").
               Caso não entenda a solicitação, diga: "Desculpe, não entendi sua solicitação. Pode reformular?".`,
-            },
-            {
-              role: "user",
-              content: `Transforme a mensagem abaixo em JSON baseado nas informações fornecidas:
+              },
+              {
+                role: "user",
+                content: `Transforme a mensagem abaixo em JSON baseado nas informações fornecidas:
               - **Fuso horário:** ${dataStore[senderJid].configs.timezone || configStore.timezone}
               - **Data/hora atual em ISOstring:** ${currentDateTimeISO}
               - **Tarefas existentes:** ${JSON.stringify(dataStore[senderJid].tasks, null, 2)}
               - **Eventos existentes:** ${JSON.stringify(dataStore[senderJid].events, null, 2)}
               - **Mensagem:** "${messageContent}"`,
-            },
-          ],
-        });
+              },
+            ],
+          });
 
-        const content = openaiResponse.choices[0].message.content.trim();
-        consoleLogColor(`Resposta da OpenAI: ${content}`, ConsoleColors.RESET);
+          const content = openaiResponse.choices[0].message.content.trim();
+          consoleLogColor(`Resposta da OpenAI: ${content}`, ConsoleColors.RESET);
 
-        // Verificar se a resposta é JSON
-        const jsonMatch = content.match(/{[\s\S]*}/);
-        if (jsonMatch) {
-          response = JSON.parse(jsonMatch[0]);
-          consoleLogColor("JSON processado com sucesso.", ConsoleColors.GREEN);
-        } else {
-          // Capturar a resposta textual para envio ao usuário
-          await handleSendMessage(senderJid, content);
+          // Verificar se a resposta é JSON
+          const jsonMatch = content.match(/{[\s\S]*}/);
+          if (jsonMatch) {
+            response = JSON.parse(jsonMatch[0]);
+            consoleLogColor("JSON processado com sucesso.", ConsoleColors.GREEN);
+          } else {
+            // Capturar a resposta textual para envio ao usuário
+            await handleSendMessage(senderJid, content);
+            continue;
+          }
+        } catch (error) {
+          console.error("Erro ao processar JSON da OpenAI:", error);
+          await handleSendMessage(senderJid, "Houve um erro ao processar sua mensagem. Tente novamente mais tarde.");
           continue;
         }
-      } catch (error) {
-        console.error("Erro ao processar JSON da OpenAI:", error);
-        await handleSendMessage(senderJid, "Houve um erro ao processar sua mensagem. Tente novamente mais tarde.");
-        continue;
       }
 
       // Processar a resposta
