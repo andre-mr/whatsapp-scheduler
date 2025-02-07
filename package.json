@@ -11,7 +11,7 @@
     "url": "https://github.com/andre-mr/whatsapp-bot-baileys.git"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "6.7.8",
+    "@whiskeysockets/baileys": "^6.7.12",
     "dotenv": "16.4.5",
     "openai": "4.73.1",
     "qrcode-terminal": "0.12.0"
