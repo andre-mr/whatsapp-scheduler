@@ -8,7 +8,7 @@
   "license": "ISC",
   "repository": {
     "type": "git",
-    "url": "https://github.com/andre-mr/whatsapp-bot-baileys.git"
+    "url": "https://github.com/andre-mr/whatsapp-scheduler.git"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.12",
