@@ -4,7 +4,7 @@ export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = t
   let formattedText = text;
   if (timestamp && text) {
     const now = new Date();
-    const timestamp = now.toLocaleString("pt-BR", {
+    const formattedTimestamp = now.toLocaleString("pt-BR", {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
@@ -13,7 +13,7 @@ export function consoleLogColor(text, color = ConsoleColors.RESET, timestamp = t
       second: "2-digit",
       hour12: false,
     });
-    formattedText = `[${timestamp}] ${text}`;
+    formattedText = `[${formattedTimestamp}] ${text}`;
   }
   switch (color) {
     case ConsoleColors.RED:

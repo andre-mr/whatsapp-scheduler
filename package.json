@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-bot-baileys",
+  "name": "whatsapp-scheduler",
   "version": "1.0.0",
-  "description": "Aplicação Node.js para envio automatizado de mensagens para grupos do WhatsApp.",
+  "description": "WhatsApp scheduling application",
   "main": "app.js",
   "type": "module",
   "author": "Andre MR",
@@ -17,6 +17,10 @@
     "qrcode-terminal": "0.12.0"
   },
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
   }
 }
