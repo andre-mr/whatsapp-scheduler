@@ -29,14 +29,22 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up WARP for IPv6 connectivity
+        uses: fscarmen/warp-on-actions@v1.1
+        with:
+          stack: dual
+
       - name: Deployment via SSH
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.LIGHTSAIL_HOST }}
-          port: '22'
+          host: ${{ secrets.LIGHTSAIL_HOST }}  # bare IPv6 address without brackets
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
           protocol: tcp6
+          port: 22
           script: |
             cd ~/whatsapp-scheduler
             git pull
