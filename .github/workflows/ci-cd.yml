@@ -36,6 +36,7 @@ jobs:
           port: '22'
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          protocol: tcp6
           script: |
             cd ~/whatsapp-scheduler
             git pull
