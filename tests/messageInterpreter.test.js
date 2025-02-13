@@ -114,7 +114,7 @@ describe('Event Creation', () => {
     test('should interpret event with absolute datetime correctly', () => {
         const futureTime = new Date(mockCurrentTime);
         futureTime.setDate(futureTime.getDate() + 10);
-        const message = `Reunião com equipe dia ${futureTime.toLocaleDateString()} às 15:00`;
+        const message = `Reunião com equipe dia ${futureTime.toLocaleDateString('pt-BR')} às 15:00`;
         const result = interpretMessage(message, mockCurrentTime, mockSenderJid, mockDataStore);
 
         expect(result).toEqual({
