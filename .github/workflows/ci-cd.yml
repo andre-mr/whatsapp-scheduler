@@ -46,6 +46,7 @@ jobs:
           protocol: tcp6
           port: 22
           script: |
+            set -e
             cd ~/whatsapp-scheduler
             git pull origin main
             source ~/.nvm/nvm.sh
