@@ -2,6 +2,6 @@
 /auth
 /dev
 /dist
-/modules/*.log
-/modules/*.json
+/data/*.log
+/data/*.json
 .env

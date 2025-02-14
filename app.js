@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 // Gerenciar PID para evitar processos duplicados
 function manageProcessPID() {
-  const filePath = path.join(__dirname, "./modules/pid.log");
+  const filePath = path.join(__dirname, "./data/pid.log");
 
   try {
     if (fs.existsSync(filePath)) {
@@ -71,8 +71,8 @@ const defaultGroupData = {
 // Dados em memória para agendamentos
 const dataStore = {};
 
-const configFilePath = path.join(__dirname, "./modules/config.json");
-const dataFilePath = path.join(__dirname, "./modules/data.json");
+const configFilePath = path.join(__dirname, "./data/config.json");
+const dataFilePath = path.join(__dirname, "./data/data.json");
 
 // Funções para manipular dados persistentes
 function saveConfig() {
