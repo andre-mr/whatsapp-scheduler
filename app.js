@@ -7,10 +7,14 @@ import { interpretMessage } from "./modules/messageInterpreter.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const dataDir = path.join(__dirname, "data");
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
 
 // Gerenciar PID para evitar processos duplicados
 function manageProcessPID() {
-  const filePath = path.join(__dirname, "./data/pid.log");
+  const filePath = path.join(dataDir, "pid.log");
 
   try {
     if (fs.existsSync(filePath)) {
@@ -71,8 +75,8 @@ const defaultGroupData = {
 // Dados em memória para agendamentos
 const dataStore = {};
 
-const configFilePath = path.join(__dirname, "./data/config.json");
-const dataFilePath = path.join(__dirname, "./data/data.json");
+const configFilePath = path.join(dataDir, "config.json");
+const dataFilePath = path.join(dataDir, "data.json");
 
 // Funções para manipular dados persistentes
 function saveConfig() {
