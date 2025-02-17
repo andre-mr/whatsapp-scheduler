@@ -51,3 +51,19 @@ export async function fetchWhatsAppVersion() {
     return [];
   }
 }
+
+export async function getWhatsAppVersion(defaultVersion) {
+  const latestVersion = await fetchWhatsAppVersion();
+  const compareVersions = (v1, v2) => {
+    for (let i = 0; i < 3; i++) {
+      if (v1[i] > v2[i]) return v1;
+      if (v2[i] > v1[i]) return v2;
+    }
+    return v1;
+  };
+  let currentVersion = defaultVersion;
+  if (latestVersion?.length) {
+    currentVersion = compareVersions(defaultVersion, latestVersion);
+  }
+  return currentVersion;
+}

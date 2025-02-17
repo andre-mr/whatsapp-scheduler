@@ -1,11 +1,3 @@
-/**
- * Interprets incoming messages and converts them to structured commands
- * @param {string} message - The message content to interpret
- * @param {string} currentDateTimeISO - Current datetime in ISO format
- * @param {string} senderJid - The sender's JID
- * @param {Object} dataStore - The data store containing user/group data
- * @returns {Object|null} Structured command object or null if message not understood
- */
 export function interpretMessage(message, currentDateTimeISO, senderJid, dataStore) {
   const lowerCaseMessage = message.toLowerCase().trim();
 
@@ -13,7 +5,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
   function parseDateFromMessage(message) {
     const now = new Date(currentDateTimeISO);
 
-    // "dia DD/MM" ou "dia DD/MM/YYYY" com horário opcional
+    // "day DD/MM" or "day DD/MM/YYYY" with optional time
     if (/(dia) \d{1,2}\/\d{1,2}(\/\d{4})?/.test(message)) {
       const dateMatch = message.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
       const timeMatch = message.match(/às (\d{1,2})(?:[h:](\d{2}))?/);
@@ -37,7 +29,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
       }
     }
 
-    // "amanhã"
+    // "tomorrow"
     if (/(amanhã às|amanhã) (\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2}|\d{1,2})/.test(message)) {
       const timeMatch = message.match(/\d{1,2}(?::\d{2}(?::\d{2})?)?/);
       if (timeMatch) {
@@ -48,7 +40,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
       }
     }
 
-    // "hoje"
+    // "today"
     if (/(hoje às|hoje|às) (\d{1,2}:\d{2}:\d{2}|\d{1,2}:\d{2}|\d{1,2})/.test(message)) {
       const timeMatch = message.match(/\d{1,2}(?::\d{2}(?::\d{2})?)?/);
       if (timeMatch) {
@@ -58,7 +50,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
       }
     }
 
-    // "em x dias"
+    // "in x days"
     if (/(em|daqui|daqui a) \d+ dias/.test(message)) {
       const daysMatch = message.match(/em (\d+) dias/);
       if (daysMatch) {
@@ -69,7 +61,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
       }
     }
 
-    // "em x minutos" ou "em x horas"
+    // "in x minutes" or "in x hours"
     if (/(em|daqui|daqui a) \d+ (minutos|horas)/.test(message)) {
       const timeMatch = message.match(/em (\d+) (minutos|horas)/);
       if (timeMatch) {
@@ -86,7 +78,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
     return null;
   }
 
-  // "nova tarefa:" ou variações
+  // "new task:" or variations
   if (
     lowerCaseMessage.startsWith("nova tarefa:") ||
     lowerCaseMessage.startsWith("criar tarefa:") ||
@@ -101,7 +93,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
     }
   }
 
-  // "remover" ou "apagar"
+  // "remove" or "delete"
   if (
     lowerCaseMessage.startsWith("remover ") ||
     lowerCaseMessage.startsWith("apagar ") ||
@@ -126,7 +118,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
     }
   }
 
-  // "limpar tarefas" ou "limpar eventos"
+  // "clear tasks" or "clear events"
   if (["limpar tarefas", "apagar tarefas", "remover tarefas", "excluir tarefas"].includes(lowerCaseMessage)) {
     return {
       type: "clear",
@@ -144,7 +136,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
     };
   }
 
-  // alteração em tarefas ou eventos
+  // modification in tasks or events
   if (/mudar .+ para .+/.test(lowerCaseMessage)) {
     const parts = message.match(/mudar (.+) para (.+)/i);
     if (parts) {
@@ -186,7 +178,7 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
     }
   }
 
-  // detectar padrões para eventos
+  // detect patterns for events
   if (
     /^(evento:|novo evento:|adicionar evento:)?\s?.{2,} (hoje|amanhã|em \d+ dias|em \d+ (minutos|horas)|às \d{1,2}[:h]\d{2}|em \d{1,2}\/\d{1,2}(?:\/\d{4})?)/.test(
       lowerCaseMessage
@@ -202,14 +194,14 @@ export function interpretMessage(message, currentDateTimeISO, senderJid, dataSto
 
       return {
         type: "event",
-        description: description || "Evento sem descrição",
+        description: description || "Event without description",
         datetime,
         notify: 0,
       };
     }
   }
 
-  // "consultar" ou "mostrar"
+  // "query" or "show"
   if (["agenda", "tarefas", "eventos", "compromissos"].includes(lowerCaseMessage)) {
     return {
       type: "query",
