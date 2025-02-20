@@ -161,7 +161,14 @@ async function runWhatsAppBot() {
       );
       sock.readMessages([msg.key]);
 
-      if (!msg.message || msg.key.fromMe || msg.key?.protocolMessage?.fromMe || msg.message?.protocolMessage) continue;
+      if (
+        !configStore.listen ||
+        !msg.message ||
+        msg.key.fromMe ||
+        msg.key?.protocolMessage?.fromMe ||
+        msg.message?.protocolMessage
+      )
+        continue;
 
       const isFromGroup = msg.key.remoteJid.endsWith("@g.us");
       const messageSender = isFromGroup ? msg.key.participant : msg.key.remoteJid; // Who sent the message
